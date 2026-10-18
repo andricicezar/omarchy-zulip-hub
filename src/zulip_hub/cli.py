@@ -6,11 +6,12 @@ import json
 import logging
 from pathlib import Path
 import sys
+import threading
 
 from .api import ZulipClient
 from .config import ConfigError, Paths, load_config
 from .composer import serve_once as serve_composer_once
-from .daemon import BridgeDaemon
+from .daemon import BridgeDaemon, MultiBridge
 from .files import single_instance
 from .links import LinkError, summary_url
 from .marketplace import IntegrationError, run_action
@@ -20,7 +21,7 @@ from .onboarding import serve_once
 from .opening import OpenError, UrlOpener
 from .reader import serve_once as serve_reader_once
 from .secrets import SecretError, SecretToolProvider
-from .state import StateReducer, StateStore
+from .state import MergedStateStore, StateReducer, StateStore, recent_row
 
 
 def parser() -> argparse.ArgumentParser:
@@ -31,13 +32,16 @@ def parser() -> argparse.ArgumentParser:
     sub.add_parser("daemon", help="écouter les événements Zulip")
     sub.add_parser("status", help="afficher l'état local")
     sub.add_parser("check-config", help="valider la configuration")
-    sub.add_parser("login", help="enregistrer la clé API dans le trousseau")
+    login = sub.add_parser("login", help="enregistrer la clé API dans le trousseau")
+    login.add_argument("--site", help="serveur du compte (par défaut : le premier)")
     open_url = sub.add_parser("open-url", help="ouvrir une URL Zulip HTTPS")
     open_url.add_argument("url")
     open_message = sub.add_parser("open-message", help="ouvrir un message récent par son identifiant")
     open_message.add_argument("message_id", type=int)
+    open_message.add_argument("--site", help="serveur du message")
     mark_read = sub.add_parser("mark-read", help="marquer un message comme lu")
     mark_read.add_argument("message_id", type=int)
+    mark_read.add_argument("--site", help="serveur du message (par défaut : le premier compte)")
     sub.add_parser("workspace-toggle", help="afficher, masquer ou lancer le workspace Zulip")
     sub.add_parser("workspace-status", help="diagnostiquer la détection de la fenêtre Zulip")
     sub.add_parser("onboarding", help=argparse.SUPPRESS)
@@ -68,7 +72,8 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         config = load_config(config_path)
         if args.command == "check-config":
-            print(f"configuration valide: {config.account.site} ({config.account.email})")
+            for account in config.accounts:
+                print(f"configuration valide: {account.label}: {account.site} ({account.email})")
             return 0
         if args.command == "status":
             try:
@@ -78,20 +83,21 @@ def main(argv: list[str] | None = None) -> int:
                 print("aucun état disponible; le daemon a-t-il démarré ?", file=sys.stderr)
                 return 3
         if args.command == "open-url":
-            expected = config.account.site.rstrip("/") + "/#narrow/"
-            if not args.url.startswith(expected):
-                raise OpenError("l’URL ne correspond pas au serveur Zulip configuré")
+            if not any(
+                args.url.startswith(account.site.rstrip("/") + "/#narrow/")
+                for account in config.accounts
+            ):
+                raise OpenError("l’URL ne correspond à aucun serveur Zulip configuré")
             UrlOpener(config.opening).open(args.url)
             return 0
         if args.command == "open-message":
             state = StateStore(state_path).read()
-            row = next(
-                (item for item in state.get("recent", []) if item.get("id") == args.message_id),
-                None,
-            )
+            row = recent_row(state, args.message_id, args.site)
             if row is None:
                 raise OpenError("message absent de l’état récent")
-            UrlOpener(config.opening).open(summary_url(config.account.site, row))
+            # Le serveur vient de l’état, et doit encore être un compte configuré.
+            account = config.account_for(row.get("site") or args.site)
+            UrlOpener(config.opening).open(summary_url(account.site, row))
             return 0
         if args.command in {"workspace-toggle", "workspace-status"}:
             controller = HyprlandController(
@@ -104,40 +110,77 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         secrets = SecretToolProvider()
         if args.command == "login":
-            key = getpass.getpass("Clé API Zulip: ")
-            secrets.store(config.account.site, config.account.email, key)
+            account = config.account_for(args.site)
+            key = getpass.getpass(f"Clé API Zulip ({account.label}): ")
+            secrets.store(account.site, account.email, key)
             print("clé enregistrée dans le trousseau")
             return 0
-        key = secrets.get(config.account.site, config.account.email)
         logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
-        client = ZulipClient(
-            config.account.site, config.account.email, key, config.request_timeout_seconds
-        )
         if args.command == "mark-read":
             if args.message_id <= 0:
                 raise ConfigError("message_id doit être positif")
-            client.mark_read([args.message_id])
+            account = config.account_for(args.site)
+            key = secrets.get(account.site, account.email)
+            ZulipClient(
+                account.site, account.email, key, config.request_timeout_seconds
+            ).mark_read([args.message_id])
             print("message marqué comme lu")
             return 0
-        notifier = NotificationCoordinator(
-            config.account.site, config.account.email, config.notifications
-        )
-        with single_instance(state_path.parent / "bridge.lock"):
-            BridgeDaemon(
-                client,
-                StateStore(state_path),
-                StateReducer(config.recent_message_limit),
-                config.initial_backoff_seconds,
-                config.max_backoff_seconds,
-                notifier=notifier,
-            ).run()
-        return 0
+        return run_bridge(config, secrets, state_path)
     except (
         ConfigError, SecretError, OpenError, LinkError, HyprlandError, IntegrationError,
         FileNotFoundError
     ) as exc:
         print(f"erreur: {exc}", file=sys.stderr)
         return 2
+
+
+def run_bridge(config, secrets: SecretToolProvider, state_path: Path) -> int:
+    """Un daemon par compte, tous fusionnés dans un seul fichier d’état.
+
+    Un compte sans clé n’empêche pas les autres de tourner : son erreur est
+    inscrite dans l’état. Sans aucune clé, l’échec reste celui d’avant.
+    """
+    merged = MergedStateStore(
+        StateStore(state_path),
+        [(account.site, account.label) for account in config.accounts],
+        config.recent_message_limit,
+    )
+    multiple = len(config.accounts) > 1
+    stop_event = threading.Event()
+    daemons = []
+    first_error: SecretError | None = None
+    for index, account in enumerate(config.accounts):
+        try:
+            key = secrets.get(account.site, account.email)
+        except SecretError as exc:
+            first_error = first_error or exc
+            merged.record_error(index, str(exc))
+            continue
+        client = ZulipClient(
+            account.site, account.email, key, config.request_timeout_seconds
+        )
+        notifier = NotificationCoordinator(
+            account.site, account.email, config.notifications,
+            label=account.label if multiple else "",
+        )
+        daemons.append(BridgeDaemon(
+            client,
+            merged.slot(index),
+            StateReducer(config.recent_message_limit),
+            config.initial_backoff_seconds,
+            config.max_backoff_seconds,
+            sleep=stop_event.wait,
+            notifier=notifier,
+            install_signals=False,
+        ))
+    if not daemons:
+        assert first_error is not None
+        raise first_error
+    with single_instance(state_path.parent / "bridge.lock"):
+        merged.write()
+        MultiBridge(daemons, stop_event, on_stop=merged.mark_stopped).run()
+    return 0
 
 
 if __name__ == "__main__":

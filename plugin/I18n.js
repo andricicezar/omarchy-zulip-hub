@@ -40,7 +40,10 @@ var strings = {
     noLocalResponse: "Le service local n’a renvoyé aucune réponse.", composeUnavailable: "Impossible de joindre le service de composition.",
     osIntegration: "INTÉGRATION OMARCHY", osIntegrationDescription: "Ajoute Super+Z pour ouvrir le panneau et Super+Maj+Z pour le workspace Zulip.",
     enableShortcuts: "Activer les raccourcis Omarchy", removeShortcuts: "Retirer les raccourcis Omarchy",
-    shortcutsEnabled: "Raccourcis Omarchy activés.", shortcutsDisabled: "Raccourcis Omarchy retirés.", working: "Traitement…"
+    shortcutsEnabled: "Raccourcis Omarchy activés.", shortcutsDisabled: "Raccourcis Omarchy retirés.", working: "Traitement…",
+    accounts: "COMPTES ZULIP", addAccount: "Ajouter un compte Zulip", newAccount: "NOUVEAU COMPTE ZULIP",
+    accountName: "Nom affiché (facultatif)", removeAccount: "Retirer ce compte", missingKey: "clé absente",
+    fromAccount: "Compte"
   },
   en: {
     connected: "Connected", offline: "Offline", waiting: "Waiting for bridge",
@@ -81,7 +84,10 @@ var strings = {
     noLocalResponse: "The local service returned no response.", composeUnavailable: "Unable to reach the compose service.",
     osIntegration: "OMARCHY INTEGRATION", osIntegrationDescription: "Adds Super+Z to open the panel and Super+Shift+Z for the Zulip workspace.",
     enableShortcuts: "Enable Omarchy shortcuts", removeShortcuts: "Remove Omarchy shortcuts",
-    shortcutsEnabled: "Omarchy shortcuts enabled.", shortcutsDisabled: "Omarchy shortcuts removed.", working: "Working…"
+    shortcutsEnabled: "Omarchy shortcuts enabled.", shortcutsDisabled: "Omarchy shortcuts removed.", working: "Working…",
+    accounts: "ZULIP ACCOUNTS", addAccount: "Add Zulip account", newAccount: "NEW ZULIP ACCOUNT",
+    accountName: "Display name (optional)", removeAccount: "Remove this account", missingKey: "key missing",
+    fromAccount: "Account"
   }
 }
 

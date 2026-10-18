@@ -41,7 +41,7 @@ QtObject {
     root.message = null
     root.responseLine = ""
     root.open = true
-    root.pendingRequest = { action: "read", message_id: identifier }
+    root.pendingRequest = { action: "read", message_id: identifier, site: String(row.site || "") }
     process.stdinEnabled = true
     process.command = ["/usr/bin/python3", root.runnerPath, "read-message"]
     process.running = true

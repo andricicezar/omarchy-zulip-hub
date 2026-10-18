@@ -22,6 +22,10 @@ QtObject {
   property bool diagnosticsOpen: false
   property var settings: ({})
   property var diagnostics: ({})
+  property var accounts: []
+  property int maxAccounts: 16
+  // Serveur du compte en cours de modification ; vide pour un nouveau compte.
+  property string editingSite: ""
   readonly property string runnerPath: decodeURIComponent(
     String(Qt.resolvedUrl("../run-plugin.py")).replace(/^file:\/\//, ""))
 
@@ -42,13 +46,19 @@ QtObject {
 
   function refresh() { request({ action: "status" }) }
 
-  function setup(siteValue, emailValue, apiKeyValue) {
+  function setup(siteValue, emailValue, apiKeyValue, nameValue, originalSite) {
     return request({
       action: "setup",
       site: String(siteValue || ""),
       email: String(emailValue || ""),
-      api_key: String(apiKeyValue || "")
+      api_key: String(apiKeyValue || ""),
+      name: String(nameValue || ""),
+      original_site: String(originalSite || "")
     })
+  }
+
+  function removeAccount(siteValue) {
+    return request({ action: "remove_account", site: String(siteValue || "") })
   }
 
   function deactivate() { request({ action: "deactivate" }) }
@@ -90,6 +100,8 @@ QtObject {
     root.message = String(response.message || "")
     if (response.settings && typeof response.settings === "object")
       root.settings = response.settings
+    root.accounts = Array.isArray(response.accounts) ? response.accounts : []
+    root.maxAccounts = Number(response.max_accounts) || 16
     root.ready = true
     if (root.configured && root.active) root.editing = false
   }

@@ -36,13 +36,14 @@ class ReaderManager:
         if self.secrets is None:
             self.secrets = SecretToolProvider()
 
-    def _client(self) -> ZulipClient:
+    def _client(self, site: str | None) -> ZulipClient:
         config = load_config(self.config_path)
+        account = config.account_for(site)
         assert self.secrets is not None
-        key = self.secrets.get(config.account.site, config.account.email)
+        key = self.secrets.get(account.site, account.email)
         return ZulipClient(
-            config.account.site,
-            config.account.email,
+            account.site,
+            account.email,
             key,
             config.request_timeout_seconds,
         )
@@ -59,10 +60,15 @@ class ReaderManager:
         message_id = request.get("message_id")
         if not isinstance(message_id, int) or isinstance(message_id, bool) or message_id <= 0:
             raise ReaderError("Le message demandé est invalide.")
-        row = recent_row(self._local_state(), message_id)
+        site = request.get("site")
+        if site is not None and not isinstance(site, str):
+            raise ReaderError("Le serveur demandé est invalide.")
+        row = recent_row(self._local_state(), message_id, site)
         if row is None:
             raise ReaderError("Ce message n’est plus dans les conversations récentes.")
-        content = self._client().message(message_id).get("content")
+        # Le serveur interrogé est celui de la ligne d’état, pas celui de la requête.
+        row_site = row.get("site") or site
+        content = self._client(row_site).message(message_id).get("content")
         if not isinstance(content, str):
             raise ReaderError("Le serveur n’a renvoyé aucun contenu.")
         return {
@@ -75,6 +81,8 @@ class ReaderManager:
                 "channel": row.get("channel"),
                 "topic": row.get("topic"),
                 "timestamp": row.get("timestamp"),
+                "site": row.get("site") or "",
+                "account": row.get("account") or "",
             },
         }
 

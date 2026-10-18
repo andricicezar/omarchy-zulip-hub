@@ -10,7 +10,7 @@ from .api import ZulipAPIError, ZulipClient
 from .config import ConfigError, Paths, load_config
 from .secrets import SecretError, SecretToolProvider
 from .limits import MAX_DIRECTORY, MAX_NAME, bounded_text, encoded_response
-from .state import recent_row
+from .state import account_entry, recent_row
 
 
 class ComposerError(RuntimeError):
@@ -29,16 +29,26 @@ class ComposerManager:
         if self.secrets is None:
             self.secrets = SecretToolProvider()
 
-    def _client(self) -> tuple[ZulipClient, Any]:
+    def _client(self, site: str | None = None) -> tuple[ZulipClient, Any]:
         config = load_config(self.config_path)
+        account = config.account_for(site)
         assert self.secrets is not None
-        key = self.secrets.get(config.account.site, config.account.email)
+        key = self.secrets.get(account.site, account.email)
         return ZulipClient(
-            config.account.site,
-            config.account.email,
+            account.site,
+            account.email,
             key,
             config.request_timeout_seconds,
-        ), config
+        ), account
+
+    @staticmethod
+    def _site(request: dict[str, Any]) -> str | None:
+        site = request.get("site")
+        if site is None or site == "":
+            return None
+        if not isinstance(site, str):
+            raise ComposerError("Le serveur demandé est invalide.")
+        return site
 
     def _local_state(self) -> dict[str, Any]:
         try:
@@ -48,8 +58,8 @@ class ComposerManager:
         except (FileNotFoundError, OSError, json.JSONDecodeError):
             return {}
 
-    def directory(self) -> dict[str, Any]:
-        client, config = self._client()
+    def directory(self, request: dict[str, Any] | None = None) -> dict[str, Any]:
+        client, account = self._client(self._site(request or {}))
         identity = client.test_connection()
         self_id = identity.get("user_id")
         users = []
@@ -80,6 +90,8 @@ class ComposerManager:
         for row in state.get("recent", []):
             if not isinstance(row, dict) or row.get("type") != "private":
                 continue
+            if row.get("site") and row.get("site") != account.site:
+                continue
             candidates = [row.get("sender_id"), *row.get("recipient_ids", [])]
             for value in candidates:
                 if isinstance(value, int) and value > 0 and value != self_id and value not in recent_ids:
@@ -88,21 +100,23 @@ class ComposerManager:
             "ok": True,
             "users": users,
             "recent_user_ids": recent_ids,
-            "max_message_length": self._max_message_length(),
-            "site": config.account.site,
+            "max_message_length": self._max_message_length(account.site),
+            "site": account.site,
         }
 
-    def _max_message_length(self) -> int:
-        maximum = self._local_state().get("max_message_length", 10000)
+    def _max_message_length(self, site: str | None = None) -> int:
+        state = self._local_state()
+        entry = account_entry(state, site) if site else {}
+        maximum = entry.get("max_message_length", state.get("max_message_length", 10000))
         if not isinstance(maximum, int) or isinstance(maximum, bool) or maximum <= 0:
             return 10000
         return maximum
 
-    def _validated_content(self, request: dict[str, Any]) -> str:
+    def _validated_content(self, request: dict[str, Any], site: str | None = None) -> str:
         content = request.get("content")
         if not isinstance(content, str) or not content.strip():
             raise ComposerError("Le message est vide.")
-        maximum = self._max_message_length()
+        maximum = self._max_message_length(site)
         if len(content) > maximum:
             raise ComposerError(f"Le message dépasse la limite de {maximum} caractères.")
         return content
@@ -117,7 +131,7 @@ class ComposerManager:
         message_id = request.get("message_id")
         if not isinstance(message_id, int) or isinstance(message_id, bool) or message_id <= 0:
             raise ComposerError("Le message auquel répondre est invalide.")
-        row = recent_row(self._local_state(), message_id)
+        row = recent_row(self._local_state(), message_id, self._site(request))
         if row is None:
             raise ComposerError("Ce message n’est plus dans les conversations récentes.")
         return row
@@ -147,8 +161,9 @@ class ComposerManager:
 
     def send_direct(self, request: dict[str, Any]) -> dict[str, Any]:
         recipient_ids = self._recipient_ids(request)
-        content = self._validated_content(request)
-        client, _config = self._client()
+        site = self._site(request)
+        content = self._validated_content(request, site)
+        client, _account = self._client(site)
         return {"ok": True, "message_id": client.send_direct(recipient_ids, content)}
 
     def _reply_to_channel(self, row: dict[str, Any], content: str, client: ZulipClient) -> int:
@@ -179,8 +194,10 @@ class ComposerManager:
 
     def reply(self, request: dict[str, Any]) -> dict[str, Any]:
         row = self._recent_row(request)
-        content = self._validated_content(request)
-        client, _config = self._client()
+        # La réponse part vers le serveur de la conversation, lu dans l’état.
+        site = row.get("site") or self._site(request)
+        content = self._validated_content(request, site)
+        client, _account = self._client(site)
         message_id = (
             self._reply_to_channel(row, content, client)
             if row.get("type") == "stream"
@@ -191,7 +208,7 @@ class ComposerManager:
     def handle(self, request: dict[str, Any]) -> dict[str, Any]:
         action = request.get("action")
         if action == "directory":
-            return self.directory()
+            return self.directory(request)
         if action == "send_direct":
             return self.send_direct(request)
         if action == "reply":

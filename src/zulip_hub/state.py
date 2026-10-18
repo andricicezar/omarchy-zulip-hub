@@ -4,9 +4,11 @@ from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+import copy
 import json
 import os
 import tempfile
+import threading
 
 from .limits import (
     MAX_MESSAGE_LENGTH,
@@ -21,10 +23,20 @@ def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def recent_row(state: dict[str, Any], message_id: int) -> dict[str, Any] | None:
-    """Retrouve une conversation récente par identifiant de message."""
+def recent_row(
+    state: dict[str, Any], message_id: int, site: str | None = None,
+) -> dict[str, Any] | None:
+    """Retrouve une conversation récente par identifiant de message.
+
+    Deux serveurs peuvent attribuer le même identifiant : avec plusieurs
+    comptes, le serveur fait partie de la clé. Sans *site*, la première ligne
+    portant cet identifiant est retenue, comme avant les comptes multiples.
+    """
+    wanted = site.rstrip("/") if isinstance(site, str) and site else None
     for row in state.get("recent", []):
-        if isinstance(row, dict) and row.get("id") == message_id:
+        if not isinstance(row, dict) or row.get("id") != message_id:
+            continue
+        if wanted is None or str(row.get("site") or "").rstrip("/") == wanted:
             return row
     return None
 
@@ -39,6 +51,7 @@ class HubState:
     server_url: str = ""
     error: str | None = None
     max_message_length: int = 10000
+    accounts: list[dict[str, Any]] = field(default_factory=list)
 
 
 class StateStore:
@@ -78,6 +91,119 @@ class StateStore:
 
     def read(self) -> dict[str, Any]:
         return json.loads(self.path.read_text(encoding="utf-8"))
+
+
+class MergedStateStore:
+    """Fusionne l’état de plusieurs comptes dans un seul fichier.
+
+    Chaque compte a son daemon et son réducteur ; tous écrivent ici par leur
+    façade. L’interface lit un état unique : compteurs additionnés,
+    conversations récentes de tous les serveurs triées par date, chacune
+    marquée de son serveur, et un résumé par compte.
+    """
+
+    def __init__(self, store: StateStore, accounts: list[tuple[str, str]], limit: int = 30):
+        self.store = store
+        self.accounts = list(accounts)
+        self.limit = limit
+        self._lock = threading.Lock()
+        self._slots: list[dict[str, Any]] = [
+            asdict(HubState(server_url=site)) for site, _name in self.accounts
+        ]
+
+    def slot(self, index: int) -> "AccountSlotStore":
+        return AccountSlotStore(self, index)
+
+    def update(self, index: int, state: HubState) -> None:
+        # Instantané pris dans le fil du compte : les autres fils ne lisent
+        # jamais un réducteur qu’ils ne possèdent pas.
+        snapshot = copy.deepcopy(asdict(state))
+        with self._lock:
+            self._slots[index] = snapshot
+            self.store.write(self.merged())
+
+    def record_error(self, index: int, message: str) -> None:
+        with self._lock:
+            slot = self._slots[index]
+            slot["connected"] = False
+            slot["error"] = message
+            slot["last_sync"] = utc_now()
+
+    def write(self) -> None:
+        with self._lock:
+            self.store.write(self.merged())
+
+    def mark_stopped(self) -> None:
+        """Arrêt du bridge : plus aucun compte n’est connecté."""
+        with self._lock:
+            for slot in self._slots:
+                slot["connected"] = False
+                slot["error"] = None
+            self.store.write(self.merged())
+
+    def merged(self) -> HubState:
+        result = HubState()
+        result.server_url = self.accounts[0][0] if self.accounts else ""
+        rows: list[dict[str, Any]] = []
+        errors: list[str] = []
+        syncs: list[str] = []
+        lengths: list[int] = []
+        totals = {"total": 0, "mentions": 0, "private": 0}
+        multiple = len(self.accounts) > 1
+        for (site, name), slot in zip(self.accounts, self._slots):
+            unread = slot.get("unread") or {}
+            for key in totals:
+                value = unread.get(key, 0)
+                totals[key] += value if isinstance(value, int) and value > 0 else 0
+            for row in slot.get("recent", []):
+                if isinstance(row, dict):
+                    rows.append({**row, "site": site, "account": name})
+            error = slot.get("error")
+            if error:
+                errors.append(f"{name} : {error}" if multiple else str(error))
+            if slot.get("last_sync"):
+                syncs.append(str(slot["last_sync"]))
+            if isinstance(slot.get("max_message_length"), int):
+                lengths.append(slot["max_message_length"])
+            result.accounts.append({
+                "site": site,
+                "name": name,
+                "connected": slot.get("connected") is True,
+                "error": error or None,
+                "last_sync": slot.get("last_sync"),
+                "unread": {key: unread.get(key, 0) for key in totals},
+                "max_message_length": slot.get("max_message_length", 10000),
+            })
+        rows.sort(
+            key=lambda row: row.get("timestamp") if isinstance(row.get("timestamp"), int) else 0,
+            reverse=True,
+        )
+        result.recent = rows[: self.limit]
+        result.unread = totals
+        result.connected = any(account["connected"] for account in result.accounts)
+        result.error = " · ".join(errors) or None
+        result.last_sync = max(syncs) if syncs else None
+        result.max_message_length = lengths[0] if lengths else 10000
+        return result
+
+
+class AccountSlotStore:
+    """Façade de StateStore remise au daemon d’un seul compte."""
+
+    def __init__(self, merged: MergedStateStore, index: int):
+        self.merged = merged
+        self.index = index
+
+    def write(self, state: HubState) -> None:
+        self.merged.update(self.index, state)
+
+
+def account_entry(state: dict[str, Any], site: str | None) -> dict[str, Any]:
+    """Résumé d’un compte dans l’état fusionné ; vide s’il est inconnu."""
+    for entry in state.get("accounts", []) or []:
+        if isinstance(entry, dict) and (site is None or entry.get("site") == site):
+            return entry
+    return {}
 
 
 class StateReducer:

@@ -156,6 +156,33 @@ ShellRoot {
         Qt.exit(1)
         return
       }
+      plugin.onboardingController.accounts = [
+        {site: "https://a.example.org", label: "A", name: "", email: "me@a.example.org", has_secret: true},
+        {site: "https://b.example.org", label: "B", name: "B", email: "me@b.example.org", has_secret: true},
+        {site: "https://c.example.org", label: "C", name: "", email: "me@c.example.org", has_secret: false}
+      ]
+      if (plugin.composerAccounts().length !== 2) {
+        console.error("ZULIP_HUB_COMPOSER_ACCOUNTS_MISMATCH")
+        Qt.exit(1)
+        return
+      }
+      plugin.beginAccountEdit(plugin.onboardingController.accounts[1])
+      if (!plugin.showSetup || plugin.onboardingController.editingSite !== "https://b.example.org") {
+        console.error("ZULIP_HUB_ACCOUNT_EDIT_MISMATCH")
+        Qt.exit(1)
+        return
+      }
+      plugin.onboardingController.editing = false
+      plugin.composerController.startReply({
+        id: 42, type: "private", sender: "Bob", site: "https://b.example.org", account: "B"
+      })
+      if (plugin.composerController.site !== "https://b.example.org"
+          || plugin.composerController.loaded !== false) {
+        console.error("ZULIP_HUB_REPLY_SITE_MISMATCH")
+        Qt.exit(1)
+        return
+      }
+      plugin.composerController.open = false
       if (expectOffline) {
         if (plugin.hub.loaded || plugin.hub.connected || plugin.hub.statusText === "") {
           console.error("ZULIP_HUB_OFFLINE_STATE_MISMATCH")

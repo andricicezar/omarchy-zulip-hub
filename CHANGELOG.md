@@ -1,5 +1,23 @@
 # Historique des versions
 
+## 2.5.0 — 2026-10-18
+
+- **Plusieurs serveurs Zulip.** La configuration accepte une liste
+  `[[accounts]]` (`site`, `email`, `name` facultatif) ; l'ancienne section
+  `[account]` reste lue et est convertie à la première modification. Le bridge
+  ouvre une file d'événements par compte, dans un seul processus, et fusionne
+  leurs états : compteurs additionnés, conversations récentes de tous les
+  serveurs triées par date et marquées de leur compte, état par compte pour le
+  diagnostic. Un compte sans clé ou hors ligne n'empêche pas les autres.
+- **Chaque action vise le serveur de la conversation.** Lecture, réponse,
+  ouverture et « marquer comme lu » transmettent le serveur avec
+  l'identifiant ; le pont retrouve la ligne par ce couple dans son propre état
+  et refuse tout serveur non configuré. La garantie anti-redirection reste
+  entière.
+- **Réglages → Comptes Zulip** liste les comptes, permet d'en ajouter, d'en
+  modifier ou d'en retirer un. Le compositeur propose le compte d'envoi des
+  nouveaux messages directs ; les notifications portent le nom du compte.
+
 ## 2.4.3 — 2026-09-02
 
 - **Un refus définitif du serveur ne relance plus le bridge en boucle.** Sur

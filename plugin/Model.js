@@ -7,9 +7,33 @@ function emptyState(errorText) {
     last_sync: null,
     unread: { total: 0, mentions: 0, private: 0 },
     recent: [],
+    accounts: [],
     max_message_length: 10000,
     error: errorText || ""
   }
+}
+
+function normalizeAccounts(rows) {
+  if (!Array.isArray(rows)) return []
+  var result = []
+  for (var index = 0; index < rows.length; index++) {
+    var row = rows[index]
+    if (!row || typeof row !== "object" || !row.site) continue
+    var unread = row.unread && typeof row.unread === "object" ? row.unread : {}
+    result.push({
+      site: String(row.site),
+      name: String(row.name || row.site),
+      connected: row.connected === true,
+      error: row.error ? String(row.error) : "",
+      last_sync: row.last_sync || null,
+      unread: {
+        total: nonNegativeInt(unread.total),
+        mentions: nonNegativeInt(unread.mentions),
+        private: nonNegativeInt(unread.private)
+      }
+    })
+  }
+  return result
 }
 
 function nonNegativeInt(value) {
@@ -33,6 +57,8 @@ function normalizeRecent(rows) {
       channel: row.channel === null || row.channel === undefined ? "" : String(row.channel),
       topic: row.topic === null || row.topic === undefined ? "" : String(row.topic),
       timestamp: nonNegativeInt(row.timestamp),
+      site: row.site ? String(row.site) : "",
+      account: row.account ? String(row.account) : "",
       flags: Array.isArray(row.flags) ? row.flags : [],
       recipient_ids: Array.isArray(row.recipient_ids)
         ? row.recipient_ids.map(nonNegativeInt).filter(function(value) { return value > 0 })
@@ -61,6 +87,7 @@ function parseState(raw) {
           private: nonNegativeInt(parsed.unread.private)
         },
         recent: normalizeRecent(parsed.recent),
+        accounts: normalizeAccounts(parsed.accounts),
         max_message_length: nonNegativeInt(parsed.max_message_length) || 10000,
         server_url: parsed.server_url ? String(parsed.server_url) : "",
         error: parsed.error ? String(parsed.error) : ""

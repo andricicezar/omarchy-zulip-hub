@@ -15,6 +15,8 @@ Item {
   readonly property string lastError: String(state.error || "")
   readonly property var unread: state.unread || ({ total: 0, mentions: 0, private: 0 })
   readonly property var recent: state.recent || []
+  readonly property var accounts: state.accounts || []
+  readonly property bool multiAccount: accounts.length > 1
   readonly property int refreshIntervalSec: intSetting("refreshIntervalSec", 2, 1, 60)
   readonly property string statusText: Model.statusText(state, loaded)
 

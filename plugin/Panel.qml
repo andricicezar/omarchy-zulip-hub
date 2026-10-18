@@ -59,15 +59,16 @@ Panel {
     available: false, ready: false, configured: false, active: false, busy: false, editing: false,
     settingsOpen: false, diagnosticsOpen: false, settings: ({}), diagnostics: ({}),
     site: "", email: "", service: "unknown", message: "", error: "",
-    refresh: function() {}, setup: function() { return false },
+    accounts: [], maxAccounts: 16, editingSite: "",
+    refresh: function() {}, setup: function() { return false }, removeAccount: function() { return false },
     activate: function() {}, deactivate: function() {}, disconnect: function() {},
     saveSettings: function() { return false }, loadDiagnostics: function() {}, reconnect: function() {}
   })
   property var fallbackComposer: ({
     available: false, open: false, loaded: false, busy: false, users: [], selectedIds: [],
     query: "", content: "", error: "", message: "", maxMessageLength: 10000,
-    replying: false, replyTarget: null, replyDestination: "",
-    loadDirectory: function() {}, filteredUsers: function() { return [] },
+    replying: false, replyTarget: null, replyDestination: "", site: "",
+    loadDirectory: function() {}, selectSite: function() {}, filteredUsers: function() { return [] },
     selectedUsers: function() { return [] }, isSelected: function() { return false },
     toggleUser: function() {}, send: function() { return false },
     startReply: function() {}, startCompose: function() {}
@@ -90,6 +91,8 @@ Panel {
     lastError: "",
     unread: { total: 0, mentions: 0, private: 0 },
     recent: [],
+    accounts: [],
+    multiAccount: false,
     statusText: "Waiting for bridge state",
     refresh: function() {}
   })
@@ -107,6 +110,35 @@ Panel {
       if (channel !== "" && result.indexOf(channel) === -1) result.push(channel)
     }
     return result
+  }
+
+  // Avec plusieurs comptes, chaque conversation dit de quel serveur elle vient.
+  function accountPrefix(row) {
+    return hub.multiAccount && row && row.account ? String(row.account) + "  ·  " : ""
+  }
+
+  function siteArguments(row) {
+    return row && row.site ? ["--site", String(row.site)] : []
+  }
+
+  // Les champs du formulaire sont remplis ici, et non par liaison : une
+  // liaison rompue a la premiere frappe ne suivrait plus le compte choisi.
+  function fillAccountForm(account) {
+    onboarding.editingSite = account ? String(account.site || "") : ""
+    siteField.text = account ? String(account.site || "") : ""
+    emailField.text = account ? String(account.email || "") : ""
+    nameField.text = account ? String(account.name || "") : ""
+    apiKeyField.text = ""
+  }
+
+  function beginAccountEdit(account) {
+    fillAccountForm(account)
+    onboarding.settingsOpen = false
+    onboarding.editing = true
+  }
+
+  function composerAccounts() {
+    return onboarding.accounts.filter(function(account) { return account.has_secret === true })
   }
 
   function ensureCursor() {
@@ -138,11 +170,12 @@ Panel {
   function focusTargets() {
     var rows = []
     if (root.showSetup) {
-      appendTarget(rows, siteField); appendTarget(rows, emailField); appendTarget(rows, apiKeyField)
+      appendTarget(rows, nameField); appendTarget(rows, siteField); appendTarget(rows, emailField); appendTarget(rows, apiKeyField)
       appendTarget(rows, connectButton); appendTarget(rows, disconnectButton)
     } else if (root.showComposer) {
       appendTarget(rows, composeNavButton)
       if (!composer.replying) {
+        appendTarget(rows, composeAccountField)
         appendTarget(rows, composeSearchField)
         appendChildren(rows, recipientResults)
       }
@@ -157,7 +190,8 @@ Panel {
       appendTarget(rows, notifyFollowed); appendTarget(rows, notifyOther); appendTarget(rows, notifyLocked)
       appendTarget(rows, groupWindowField); appendTarget(rows, mutedChannelsField); appendTarget(rows, alwaysChannelsField)
       appendTarget(rows, openModeField); appendTarget(rows, desktopCommandField); appendTarget(rows, workspaceCommandField)
-      appendTarget(rows, saveSettingsButton); appendTarget(rows, editAccountButton)
+      appendTarget(rows, saveSettingsButton)
+      appendChildren(rows, accountList); appendTarget(rows, addAccountButton)
       appendTarget(rows, diagnosticsButton); appendTarget(rows, serviceButton)
       appendTarget(rows, osIntegrationButton)
     } else if (root.showDiagnostics) {
@@ -239,6 +273,7 @@ Panel {
     if (!row || openProcess.running) return
     actionError = ""
     openProcess.command = ["/usr/bin/python3", root.runnerPath, "open-message", String(row.id)]
+      .concat(root.siteArguments(row))
     openProcess.running = true
     close()
   }
@@ -267,6 +302,7 @@ Panel {
     if (!row || readProcess.running) return
     actionError = ""
     readProcess.command = ["/usr/bin/python3", root.runnerPath, "mark-read", String(row.id)]
+      .concat(root.siteArguments(row))
     readProcess.running = true
   }
 
@@ -300,7 +336,11 @@ Panel {
   }
   onMessageCountChanged: ensureCursor()
   onSelectedIndexChanged: scrollCursorIntoView()
-  onShowSetupChanged: resetCursor()
+  onShowSetupChanged: {
+    // Premier lancement, ou clé perdue : le formulaire part du premier compte.
+    if (showSetup && !onboarding.editing) fillAccountForm(onboarding.accounts[0] || null)
+    resetCursor()
+  }
   onShowSettingsChanged: resetCursor()
   onShowDiagnosticsChanged: resetCursor()
   onShowComposerChanged: resetCursor()
@@ -412,6 +452,7 @@ Panel {
       id: keyCatcher
       anchors.fill: parent
       blocked: siteField.activeFocus || emailField.activeFocus || apiKeyField.activeFocus
+        || nameField.activeFocus || composeAccountField.activeFocus
         || composeSearchField.activeFocus || composeField.activeFocus
         || groupWindowField.activeFocus || mutedChannelsField.activeFocus
         || alwaysChannelsField.activeFocus || desktopCommandField.activeFocus
@@ -536,7 +577,8 @@ Panel {
             spacing: Style.space(8)
 
             PanelSectionHeader {
-              text: onboarding.configured ? root.t("account") : root.t("welcome")
+              text: !onboarding.configured ? root.t("welcome")
+                : (onboarding.editingSite !== "" ? root.t("account") : root.t("newAccount"))
               foreground: root.foreground
               fontFamily: root.fontFamily
             }
@@ -552,10 +594,21 @@ Panel {
             }
 
             TextField {
+              id: nameField
+              width: parent.width
+              placeholderText: root.t("accountName")
+              enabled: !onboarding.busy
+              Accessible.name: root.t("accountName")
+              hasCursor: root.hasCursor(this)
+              function keyboardActivate() { forceActiveFocus() }
+              onHoveredChanged: if (hovered) root.selectTarget(this)
+              Keys.onPressed: function(event) { if (event.key === Qt.Key_Escape) { root.leaveEditor(); event.accepted = true } }
+            }
+
+            TextField {
               id: siteField
               width: parent.width
               placeholderText: "https://zulip.votre-entreprise.fr"
-              text: onboarding.site
               inputMethodHints: Qt.ImhUrlCharactersOnly | Qt.ImhNoAutoUppercase
               enabled: !onboarding.busy
               Accessible.name: "URL du serveur Zulip"
@@ -569,7 +622,6 @@ Panel {
               id: emailField
               width: parent.width
               placeholderText: "prenom.nom@entreprise.fr"
-              text: onboarding.email
               inputMethodHints: Qt.ImhEmailCharactersOnly | Qt.ImhNoAutoUppercase
               enabled: !onboarding.busy
               Accessible.name: "Adresse e-mail Zulip"
@@ -582,7 +634,7 @@ Panel {
             TextField {
               id: apiKeyField
               width: parent.width
-              placeholderText: onboarding.configured
+              placeholderText: onboarding.editingSite !== ""
                 ? "Nouvelle clé API (requise pour retester)"
                 : "Clé API Zulip"
               echoMode: TextInput.Password
@@ -606,7 +658,8 @@ Panel {
                   && emailField.text.trim() !== "" && apiKeyField.text.trim() !== ""
                 onClicked: {
                   var secret = apiKeyField.text
-                  if (onboarding.setup(siteField.text, emailField.text, secret)) {
+                  if (onboarding.setup(siteField.text, emailField.text, secret,
+                                       nameField.text, onboarding.editingSite)) {
                     apiKeyField.text = ""
                     secret = ""
                   }
@@ -618,10 +671,10 @@ Panel {
               }
               Button {
                 id: disconnectButton
-                visible: onboarding.configured
-                text: root.t("disconnect")
+                visible: onboarding.configured && onboarding.editingSite !== ""
+                text: onboarding.accounts.length > 1 ? root.t("removeAccount") : root.t("disconnect")
                 enabled: !onboarding.busy
-                onClicked: onboarding.disconnect()
+                onClicked: onboarding.removeAccount(onboarding.editingSite)
                 hasCursor: root.hasCursor(this)
                 focusable: true
                 function keyboardActivate() { clicked() }
@@ -655,13 +708,36 @@ Panel {
             Text {
               visible: composer.replying
               width: parent.width
-              text: composer.replyDestination
+              text: root.accountPrefix(composer.replyTarget) + composer.replyDestination
               textFormat: Text.PlainText
               elide: Text.ElideRight
               color: root.foreground
               font.family: root.fontFamily
               font.pixelSize: Style.font.body
               font.bold: true
+            }
+
+            ComboBox {
+              id: composeAccountField
+              visible: !composer.replying && root.composerAccounts().length > 1
+              width: parent.width
+              model: root.composerAccounts().map(function(account) {
+                return root.t("fromAccount") + " : " + account.label
+              })
+              currentIndex: {
+                var accounts = root.composerAccounts()
+                for (var index = 0; index < accounts.length; index++)
+                  if (accounts[index].site === composer.site) return index
+                return 0
+              }
+              enabled: !composer.busy
+              onActivated: function(index) {
+                var account = root.composerAccounts()[index]
+                if (account) composer.selectSite(account.site, true)
+              }
+              property bool hasCursor: root.hasCursor(this)
+              function keyboardActivate() { forceActiveFocus(); popup.open() }
+              onHoveredChanged: if (hovered) root.selectTarget(this)
             }
 
             TextField {
@@ -836,7 +912,7 @@ Panel {
 
             Text {
               width: parent.width
-              text: reader.destination
+              text: root.accountPrefix(reader.message) + reader.destination
               textFormat: Text.PlainText
               elide: Text.ElideRight
               color: root.dim
@@ -1064,19 +1140,37 @@ Panel {
               onHovered: function(value) { if (value) root.selectTarget(this) }
             }
 
-            PanelSectionHeader { text: root.t("accountService"); foreground: root.foreground; fontFamily: root.fontFamily }
-            Button {
-              id: editAccountButton
+            PanelSectionHeader { text: root.t("accounts"); foreground: root.foreground; fontFamily: root.fontFamily }
+            Column {
+              id: accountList
               width: parent.width
-              text: root.t("editAccount")
-              enabled: !onboarding.busy
-              onClicked: {
-                onboarding.settingsOpen = false
-                onboarding.editing = true
+              spacing: Style.space(6)
+              Repeater {
+                model: onboarding.accounts
+                Button {
+                  required property var modelData
+                  width: accountList.width
+                  text: String(modelData.label || modelData.site) + " — " + String(modelData.email || "")
+                    + (modelData.has_secret === true ? "" : "  (" + root.t("missingKey") + ")")
+                  enabled: !onboarding.busy
+                  onClicked: root.beginAccountEdit(modelData)
+                  hasCursor: root.hasCursor(this); focusable: true; function keyboardActivate() { clicked() }
+                  onHovered: function(value) { if (value) root.selectTarget(this) }
+                }
               }
+            }
+            Button {
+              id: addAccountButton
+              width: parent.width
+              visible: onboarding.accounts.length < onboarding.maxAccounts
+              text: root.t("addAccount")
+              enabled: !onboarding.busy
+              onClicked: root.beginAccountEdit(null)
               hasCursor: root.hasCursor(this); focusable: true; function keyboardActivate() { clicked() }
               onHovered: function(value) { if (value) root.selectTarget(this) }
             }
+
+            PanelSectionHeader { text: root.t("accountService"); foreground: root.foreground; fontFamily: root.fontFamily }
             Button {
               id: diagnosticsButton
               width: parent.width
@@ -1142,6 +1236,15 @@ Panel {
             DiagnosticRow { label: root.t("zulipApi"); value: onboarding.diagnostics.connected === true ? root.t("apiConnected") : root.t("apiOffline") }
             DiagnosticRow { label: root.t("lastSync"); value: String(onboarding.diagnostics.last_sync || root.t("absent")) }
             DiagnosticRow { label: root.t("localState"); value: onboarding.diagnostics.state_available === true ? root.t("available") : root.t("absent") }
+            Repeater {
+              model: (onboarding.diagnostics.accounts || []).length > 1 ? onboarding.diagnostics.accounts : []
+              DiagnosticRow {
+                required property var modelData
+                label: String(modelData.name || modelData.site)
+                value: modelData.connected === true ? root.t("apiConnected")
+                  : (String(modelData.error || "") !== "" ? String(modelData.error) : root.t("apiOffline"))
+              }
+            }
             Text {
               visible: String(onboarding.diagnostics.bridge_error || "") !== ""
               width: parent.width
@@ -1496,10 +1599,10 @@ Panel {
         }
         Text {
           Layout.fillWidth: true
-          text: messageRow.row.type === "private" ? root.t("directConversation")
+          text: root.accountPrefix(messageRow.row) + (messageRow.row.type === "private" ? root.t("directConversation")
             : (messageRow.row.channel && messageRow.row.topic
               ? "#" + messageRow.row.channel + "  ›  " + messageRow.row.topic
-              : (messageRow.row.channel ? "#" + messageRow.row.channel : root.t("channelMessage")))
+              : (messageRow.row.channel ? "#" + messageRow.row.channel : root.t("channelMessage"))))
           textFormat: Text.PlainText
           color: root.dim
           font.family: root.fontFamily

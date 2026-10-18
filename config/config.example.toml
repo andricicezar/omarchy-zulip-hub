@@ -1,4 +1,6 @@
-[account]
+# One [[accounts]] block per Zulip server. The panel merges all of them.
+# `name` is optional and labels the account in the panel and notifications.
+[[accounts]]
 site = "https://zulip.example.com"
 email = "prenom.nom@example.com"
 

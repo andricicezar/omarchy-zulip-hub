@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import random
 import signal
+import threading
 import time
 from typing import Callable
 
@@ -30,6 +31,7 @@ class BridgeDaemon:
         max_backoff: float = 60,
         sleep: Callable[[float], None] = time.sleep,
         notifier=None,
+        install_signals: bool = True,
     ):
         self.client = client
         self.store = store
@@ -38,6 +40,7 @@ class BridgeDaemon:
         self.max_backoff = max_backoff
         self.sleep = sleep
         self.notifier = notifier
+        self.install_signals = install_signals
         self.running = True
         self.reducer.state.server_url = getattr(client, "site", "")
 
@@ -58,8 +61,9 @@ class BridgeDaemon:
         return delay
 
     def run(self) -> None:
-        signal.signal(signal.SIGTERM, self.stop)
-        signal.signal(signal.SIGINT, self.stop)
+        if self.install_signals:
+            signal.signal(signal.SIGTERM, self.stop)
+            signal.signal(signal.SIGINT, self.stop)
         backoff = self.initial_backoff
         queue_id = None
         last_event_id = -1
@@ -124,3 +128,47 @@ class BridgeDaemon:
         self.reducer.state.error = message
         self.reducer.state.last_sync = utc_now()
         self.store.write(self.reducer.state)
+
+
+class MultiBridge:
+    """Fait tourner un daemon par compte, chacun dans son fil.
+
+    Les signaux ne se reçoivent que dans le fil principal : c’est ici qu’ils
+    sont installés, et l’arrêt est relayé à chaque daemon. Leurs attentes
+    passent par un même événement, qu’un arrêt interrompt aussitôt.
+    """
+
+    def __init__(self, daemons: list[BridgeDaemon], stop_event: threading.Event, on_stop=None):
+        self.daemons = daemons
+        self.stop_event = stop_event
+        self.on_stop = on_stop
+
+    def stop(self, *_args) -> None:
+        self.stop_event.set()
+        for daemon in self.daemons:
+            daemon.stop()
+
+    def run(self) -> None:
+        signal.signal(signal.SIGTERM, self.stop)
+        signal.signal(signal.SIGINT, self.stop)
+        threads = [
+            threading.Thread(target=self._run_one, args=(daemon,), daemon=True)
+            for daemon in self.daemons
+        ]
+        for thread in threads:
+            thread.start()
+        while not self.stop_event.is_set() and any(thread.is_alive() for thread in threads):
+            self.stop_event.wait(0.5)
+        # Une interrogation longue en cours ne rend la main qu’à son terme : les
+        # fils sont des démons, le processus n’attend pas qu’ils la terminent.
+        for thread in threads:
+            thread.join(timeout=1)
+        if self.on_stop:
+            self.on_stop()
+
+    @staticmethod
+    def _run_one(daemon: BridgeDaemon) -> None:
+        try:
+            daemon.run()
+        except Exception as exc:  # un compte défaillant n’arrête pas les autres
+            LOGGER.error("bridge interrompu après erreur %s", type(exc).__name__)

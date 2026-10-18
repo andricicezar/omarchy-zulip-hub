@@ -18,6 +18,9 @@ QtObject {
   property string message: ""
   property int maxMessageLength: 10000
   property var replyTarget: null
+  // Serveur des nouveaux messages directs et de l’annuaire chargé ; vide
+  // jusqu’au premier chargement, qui retient alors le premier compte.
+  property string site: ""
   readonly property bool replying: root.replyTarget !== null
   readonly property string replyDestination: {
     if (!root.replyTarget) return ""
@@ -58,7 +61,10 @@ QtObject {
     if (!row) return
     root.error = ""
     root.message = ""
-    if (!root.replyTarget || Number(root.replyTarget.id) !== Number(row.id)) root.content = ""
+    if (!root.replyTarget || Number(root.replyTarget.id) !== Number(row.id)
+        || String(root.replyTarget.site || "") !== String(row.site || "")) root.content = ""
+    // La limite de taille est celle du serveur de la conversation.
+    if (row.site && String(row.site) !== root.site) root.selectSite(String(row.site), false)
     root.replyTarget = row
     root.open = true
   }
@@ -72,7 +78,17 @@ QtObject {
 
   function loadDirectory(force) {
     if (root.loaded && force !== true) return
-    request({ action: "directory" })
+    request({ action: "directory", site: root.site })
+  }
+
+  function selectSite(value, reload) {
+    if (String(value) === root.site) return
+    root.site = String(value)
+    root.selectedIds = []
+    root.users = []
+    root.recentUserIds = []
+    root.loaded = false
+    if (reload === true) loadDirectory(true)
   }
 
   function isSelected(userId) {
@@ -124,13 +140,17 @@ QtObject {
       // Seul l identifiant part : le pont deduit la destination de son propre etat.
       var target = Number(root.replyTarget.id) || 0
       if (target <= 0) return false
-      return request({ action: "reply", message_id: target, content: root.content })
+      return request({
+        action: "reply", message_id: target, content: root.content,
+        site: String(root.replyTarget.site || "")
+      })
     }
     if (root.selectedIds.length === 0) return false
     return request({
       action: "send_direct",
       recipient_ids: root.selectedIds,
-      content: root.content
+      content: root.content,
+      site: root.site
     })
   }
 
@@ -152,6 +172,7 @@ QtObject {
       root.users = Array.isArray(response.users) ? response.users : []
       root.recentUserIds = Array.isArray(response.recent_user_ids) ? response.recent_user_ids : []
       root.maxMessageLength = Math.max(1, Number(response.max_message_length) || 10000)
+      if (response.site) root.site = String(response.site)
       root.loaded = true
       return
     }

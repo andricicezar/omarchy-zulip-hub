@@ -82,8 +82,11 @@ class NotificationCoordinator:
         sender: OmarchyNotificationSender | None = None,
         lock_detector: LockDetector | None = None,
         clock: Callable[[], float] = time.monotonic,
+        label: str = "",
     ):
         self.site = site
+        # Avec plusieurs comptes, le titre dit de quel serveur vient le message.
+        self.label = label
         self.user_email = user_email.casefold()
         self.config = config
         self.sender = sender or OmarchyNotificationSender()
@@ -132,6 +135,8 @@ class NotificationCoordinator:
         replace_id = group.notification_id if within_window else None
         locked = self.config.hide_content_when_locked and self.lock_detector.is_locked()
         summary, body = self.notification_text(message, count, locked)
+        if self.label:
+            summary = f"[{self.label}] {summary}"
         flags = set(message.get("flags", []))
         urgency = "normal" if flags & MENTION_FLAGS else "low"
         notification_id = self.sender.send(

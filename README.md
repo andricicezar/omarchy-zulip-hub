@@ -31,6 +31,33 @@ omarchy plugin add https://github.com/valentin-briez-banuls/omarchy-zulip-hub.gi
 Open the bar widget and enter the Zulip server URL, account email, and API key.
 No terminal is needed after the plugin has been added.
 
+## Multiple Zulip servers
+
+Add further accounts from **Settings → Zulip accounts → Add Zulip account**.
+The bar shows the combined unread count; the panel merges recent conversations
+from every server, each labelled with its account, and replies, reads, and
+"mark as read" always go to the conversation's own server. New direct messages
+let you pick the account to send from, and notification titles carry the
+account name.
+
+The same can be written by hand in `~/.config/zulip-hub/config.toml`:
+
+```toml
+[[accounts]]
+name = "FStar"            # optional label
+site = "https://fstar.zulipchat.com"
+email = "me@example.org"
+
+[[accounts]]
+site = "https://zulip.example.org"
+email = "me@example.org"
+```
+
+then store each key with `zulip-hub login --site <url>`. The older single
+`[account]` section is still read, and is converted the first time the
+account list is changed from the panel. One account without a key, or offline,
+does not stop the others; Settings → Diagnostics shows each account's state.
+
 The optional **Omarchy integration** control in Settings adds:
 
 - `Super+Z` — open or close Zulip Hub
@@ -69,9 +96,9 @@ is only there for those who prefer the terminal.
 
 Zulip Hub creates user-owned data only:
 
-- `~/.config/zulip-hub/config.toml` — identity and preferences, mode `0600`
+- `~/.config/zulip-hub/config.toml` — accounts and preferences, mode `0600`
 - `~/.local/state/zulip-hub/` — public counters and control markers
-- Secret Service — the personal API key
+- Secret Service — one personal API key per account
 - optionally `~/.config/hypr/zulip_hub.lua` plus one managed include block
 
 Message bodies and drafts are not persisted. Reading a message fetches its

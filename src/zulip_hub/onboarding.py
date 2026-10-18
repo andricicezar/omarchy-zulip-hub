@@ -10,7 +10,7 @@ from typing import Any, TextIO
 from urllib.parse import urlsplit
 
 from .api import ZulipAPIError, ZulipClient
-from .config import ConfigError, Paths, load_config
+from .config import MAX_ACCOUNTS, AccountConfig, ConfigError, Paths, load_config
 from .files import write_atomic
 from .limits import encoded_response
 from .secrets import SecretError, SecretToolProvider
@@ -70,37 +70,57 @@ class OnboardingManager:
         marker.parent.mkdir(parents=True, exist_ok=True)
         marker.touch()
 
+    @staticmethod
+    def _is_example(site: str, email: str) -> bool:
+        return (
+            urlsplit(site).hostname in {"zulip.example.com", "example.com"}
+            or email.endswith("@example.com")
+        )
+
+    def _real_accounts(self, config: Any) -> list[AccountConfig]:
+        """Comptes saisis par l’utilisateur, sans l’exemple livré par défaut."""
+        return [
+            account for account in config.accounts
+            if not self._is_example(account.site, account.email)
+        ]
+
+    def _has_secret(self, account: AccountConfig) -> bool:
+        try:
+            assert self.secrets is not None
+            self.secrets.get(account.site, account.email)
+            return True
+        except SecretError:
+            return False
+
     def status(self) -> dict[str, Any]:
-        site = ""
-        email = ""
-        valid = False
+        config = None
+        accounts: list[dict[str, Any]] = []
         try:
             config = load_config(self.config_path)
-            site, email = config.account.site, config.account.email
-            valid = not (
-                urlsplit(site).hostname in {"zulip.example.com", "example.com"}
-                or email.endswith("@example.com")
-            )
+            for account in self._real_accounts(config):
+                accounts.append({
+                    "site": account.site,
+                    "email": account.email,
+                    "name": account.name,
+                    "label": account.label,
+                    "has_secret": self._has_secret(account),
+                })
         except ConfigError:
             pass
-        has_secret = False
-        if valid:
-            try:
-                assert self.secrets is not None
-                self.secrets.get(site, email)
-                has_secret = True
-            except SecretError:
-                pass
+        first = accounts[0] if accounts else {}
+        has_secret = any(account["has_secret"] for account in accounts)
         service = self._service_state()
         return {
             "ok": True,
-            "configured": valid and has_secret,
-            "site": site if valid else "",
-            "email": email if valid else "",
+            "configured": has_secret,
+            "site": first.get("site", ""),
+            "email": first.get("email", ""),
             "has_secret": has_secret,
+            "accounts": accounts,
+            "max_accounts": MAX_ACCOUNTS,
             "service": service,
             "active": service == "active",
-            "settings": self._settings(config) if 'config' in locals() else {},
+            "settings": self._settings(config) if config is not None else {},
         }
 
     @staticmethod
@@ -220,6 +240,17 @@ class OnboardingManager:
             "bridge_error": str(state.get("error") or ""),
             "state_available": bool(state),
             "state_schema": state.get("schema_version"),
+            "accounts": [
+                {
+                    "name": str(entry.get("name") or entry.get("site") or ""),
+                    "site": str(entry.get("site") or ""),
+                    "connected": entry.get("connected") is True,
+                    "error": str(entry.get("error") or ""),
+                    "last_sync": entry.get("last_sync"),
+                }
+                for entry in state.get("accounts", []) or []
+                if isinstance(entry, dict)
+            ],
         }
 
     def reconnect(self) -> dict[str, Any]:
@@ -248,40 +279,117 @@ class OnboardingManager:
             raise OnboardingError("La clé API est vide ou invalide.")
         return site, email, api_key
 
-    def _write_account(self, site: str, email: str) -> None:
+    @staticmethod
+    def _name(request: dict[str, Any]) -> str:
+        name = request.get("name", "")
+        if not isinstance(name, str):
+            raise OnboardingError("Le nom du compte est invalide.")
+        name = " ".join(name.split())
+        if len(name) > 60:
+            raise OnboardingError("Le nom du compte dépasse 60 caractères.")
+        return name
+
+    @staticmethod
+    def _without_account_sections(lines: list[str]) -> list[str]:
+        result: list[str] = []
+        skipping = False
+        for line in lines:
+            stripped = line.strip()
+            if stripped.startswith("["):
+                skipping = stripped in {"[account]", "[[accounts]]"}
+            if not skipping:
+                result.append(line)
+        return result
+
+    def _write_accounts(self, accounts: list[AccountConfig]) -> None:
+        """Réécrit les comptes au format ``[[accounts]]``, le reste intact.
+
+        L’ancienne section ``[account]`` disparaît au passage : la
+        configuration n’a plus qu’une seule forme dès qu’elle est réécrite.
+        """
         try:
             text = self.config_path.read_text(encoding="utf-8")
         except FileNotFoundError as exc:
             raise OnboardingError("Le fichier de configuration n’est pas installé.") from exc
-        lines = text.splitlines()
-        start = next((i for i, line in enumerate(lines) if line.strip() == "[account]"), None)
-        if start is None:
-            raise OnboardingError("La section [account] est absente de la configuration.")
-        end = next(
-            (i for i in range(start + 1, len(lines)) if lines[i].strip().startswith("[")),
-            len(lines),
-        )
-        body = [
-            line for line in lines[start + 1:end]
-            if not re.match(r"^\s*(site|email)\s*=", line)
-        ]
-        escaped_site = json.dumps(site, ensure_ascii=False)
-        escaped_email = json.dumps(email, ensure_ascii=False)
-        updated = lines[:start + 1] + [f"site = {escaped_site}", f"email = {escaped_email}"] + body + lines[end:]
-        write_atomic(self.config_path, "\n".join(updated).rstrip() + "\n", 0o600)
-        load_config(self.config_path)
+        if not accounts:
+            raise OnboardingError("Au moins un compte doit rester configuré.")
+        rest = self._without_account_sections(text.splitlines())
+        while rest and not rest[0].strip():
+            rest.pop(0)
+        blocks: list[str] = []
+        for account in accounts:
+            blocks.append("[[accounts]]")
+            if account.name:
+                blocks.append(f"name = {json.dumps(account.name, ensure_ascii=False)}")
+            blocks.append(f"site = {json.dumps(account.site, ensure_ascii=False)}")
+            blocks.append(f"email = {json.dumps(account.email, ensure_ascii=False)}")
+            blocks.append("")
+        original = text
+        write_atomic(self.config_path, "\n".join(blocks + rest).rstrip() + "\n", 0o600)
+        try:
+            load_config(self.config_path)
+        except Exception:
+            write_atomic(self.config_path, original, 0o600)
+            raise
+
+    def _current_accounts(self) -> list[AccountConfig]:
+        try:
+            return self._real_accounts(load_config(self.config_path))
+        except ConfigError:
+            return []
 
     def setup(self, request: dict[str, Any]) -> dict[str, Any]:
+        """Ajoute un compte, ou remplace celui désigné par ``original_site``."""
         site, email, api_key = self._credentials(request)
+        name = self._name(request)
+        original_site = str(request.get("original_site") or "").strip().rstrip("/")
+        accounts = self._current_accounts()
+        replaced = next(
+            (account for account in accounts if account.site in {original_site, site}),
+            None,
+        )
+        if replaced is None and len(accounts) >= MAX_ACCOUNTS:
+            raise OnboardingError(f"Au plus {MAX_ACCOUNTS} comptes sont pris en charge.")
+        if original_site and original_site != site and any(
+            account.site == site for account in accounts
+        ):
+            raise OnboardingError("Ce serveur Zulip est déjà configuré.")
         identity = ZulipClient(site, email, api_key, timeout=15).test_connection()
         assert self.secrets is not None
         self.secrets.store(site, email, api_key)
-        self._write_account(site, email)
+        updated = AccountConfig(site, email, name)
+        if replaced is None:
+            accounts.append(updated)
+        else:
+            accounts = [updated if account is replaced else account for account in accounts]
+        self._write_accounts(accounts)
+        if replaced is not None and (replaced.site, replaced.email) != (site, email):
+            try:
+                self.secrets.delete(replaced.site, replaced.email)
+            except SecretError:
+                pass
         self._pause_path().unlink(missing_ok=True)
         self._request_restart()
         result = self.status()
         result["identity"] = str(identity.get("full_name") or identity.get("email") or email)
         result["message"] = "Connexion réussie. Zulip Hub est actif."
+        return result
+
+    def remove_account(self, request: dict[str, Any]) -> dict[str, Any]:
+        """Retire un compte et sa clé ; le dernier est seulement déconnecté."""
+        site = str(request.get("site") or "").strip().rstrip("/")
+        accounts = self._current_accounts()
+        target = next((account for account in accounts if account.site == site), None)
+        if target is None:
+            raise OnboardingError("Ce compte n’est pas configuré.")
+        if len(accounts) == 1:
+            return self.disconnect()
+        self._write_accounts([account for account in accounts if account is not target])
+        assert self.secrets is not None
+        self.secrets.delete(target.site, target.email)
+        self._request_restart()
+        result = self.status()
+        result["message"] = f"Compte {target.label} retiré."
         return result
 
     def deactivate(self) -> dict[str, Any]:
@@ -296,10 +404,10 @@ class OnboardingManager:
     def activate(self) -> dict[str, Any]:
         try:
             config = load_config(self.config_path)
-            assert self.secrets is not None
-            self.secrets.get(config.account.site, config.account.email)
-        except (ConfigError, SecretError) as exc:
+        except ConfigError as exc:
             raise OnboardingError("Le compte doit être reconnecté avant activation.") from exc
+        if not any(self._has_secret(account) for account in config.accounts):
+            raise OnboardingError("Le compte doit être reconnecté avant activation.")
         self._pause_path().unlink(missing_ok=True)
         self._request_restart()
         result = self.status()
@@ -330,6 +438,8 @@ class OnboardingManager:
             return self.activate()
         if action == "disconnect":
             return self.disconnect()
+        if action == "remove_account":
+            return self.remove_account(request)
         if action == "save_settings":
             return self.save_settings(request)
         if action == "diagnostics":

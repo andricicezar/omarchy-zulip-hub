@@ -6,6 +6,7 @@ import math
 import os
 import re
 import tomllib
+from urllib.parse import urlsplit
 
 from .limits import MAX_BACKOFF_SECONDS, MAX_TIMEOUT_SECONDS
 
@@ -45,10 +46,29 @@ class Paths:
         )
 
 
+def default_account_name(site: str) -> str:
+    """Nom court d’un compte, tiré de son serveur.
+
+    « fstar.zulipchat.com » devient « fstar », « zulip.example.org »
+    devient « example.org » : assez pour distinguer les comptes dans la liste.
+    """
+    host = urlsplit(site).hostname or site
+    if host.endswith(".zulipchat.com") and host != "zulipchat.com":
+        host = host[: -len(".zulipchat.com")]
+    elif host.startswith("zulip.") and host.count(".") >= 2:
+        host = host[len("zulip."):]
+    return host
+
+
 @dataclass(frozen=True)
 class AccountConfig:
     site: str
     email: str
+    name: str = ""
+
+    @property
+    def label(self) -> str:
+        return self.name or default_account_name(self.site)
 
 
 @dataclass(frozen=True)
@@ -79,7 +99,7 @@ class WorkspaceConfig:
 
 @dataclass(frozen=True)
 class BridgeConfig:
-    account: AccountConfig
+    accounts: tuple[AccountConfig, ...]
     notifications: NotificationConfig = NotificationConfig()
     opening: OpenConfig = OpenConfig()
     workspace: WorkspaceConfig = WorkspaceConfig()
@@ -87,6 +107,70 @@ class BridgeConfig:
     request_timeout_seconds: int = 90
     initial_backoff_seconds: float = 1.0
     max_backoff_seconds: float = 60.0
+
+    def __post_init__(self) -> None:
+        if isinstance(self.accounts, AccountConfig):
+            object.__setattr__(self, "accounts", (self.accounts,))
+        if not self.accounts:
+            raise ConfigError("au moins un compte Zulip est requis")
+
+    @property
+    def account(self) -> AccountConfig:
+        """Premier compte : celui du workspace et des commandes sans --site."""
+        return self.accounts[0]
+
+    def account_for(self, site: str | None) -> AccountConfig:
+        """Compte configuré pour *site* ; le premier quand *site* est absent."""
+        if site is None or site == "":
+            return self.account
+        normalized = str(site).strip().rstrip("/")
+        for account in self.accounts:
+            if account.site == normalized:
+                return account
+        raise ConfigError("ce serveur Zulip n’est pas configuré")
+
+
+MAX_ACCOUNTS = 16
+
+
+def _account(entry: object, prefix: str) -> AccountConfig:
+    if not isinstance(entry, dict):
+        raise ConfigError(f"{prefix} doit être une table")
+    site = str(entry.get("site", "")).strip().rstrip("/")
+    email = str(entry.get("email", "")).strip()
+    name = entry.get("name", "")
+    if not site.startswith("https://"):
+        raise ConfigError(f"{prefix}.site doit utiliser https://")
+    if not email or "@" not in email:
+        raise ConfigError(f"{prefix}.email est manquant ou invalide")
+    if "key" in entry or "api_key" in entry:
+        raise ConfigError("la clé API ne doit pas être stockée dans config.toml")
+    if not isinstance(name, str) or len(name.strip()) > 60:
+        raise ConfigError(f"{prefix}.name doit être une chaîne de 60 caractères au plus")
+    return AccountConfig(site, email, name.strip())
+
+
+def _accounts(raw: dict) -> tuple[AccountConfig, ...]:
+    """Comptes configurés, au format liste ou au format historique.
+
+    ``[[accounts]]`` porte plusieurs comptes ; ``[account]`` reste lu pour les
+    configurations écrites avant la prise en charge de plusieurs serveurs.
+    """
+    if "accounts" in raw and "account" in raw:
+        raise ConfigError("[account] et [[accounts]] ne peuvent pas coexister")
+    if "accounts" in raw:
+        entries = raw["accounts"]
+        if not isinstance(entries, list) or not entries:
+            raise ConfigError("[[accounts]] doit contenir au moins un compte")
+        if len(entries) > MAX_ACCOUNTS:
+            raise ConfigError(f"au plus {MAX_ACCOUNTS} comptes sont pris en charge")
+        accounts = tuple(_account(entry, "accounts") for entry in entries)
+    else:
+        accounts = (_account(raw.get("account", {}), "account"),)
+    sites = [account.site for account in accounts]
+    if len(set(sites)) != len(sites):
+        raise ConfigError("un même serveur Zulip ne peut être configuré qu’une fois")
+    return accounts
 
 
 def load_config(path: Path) -> BridgeConfig:
@@ -97,21 +181,13 @@ def load_config(path: Path) -> BridgeConfig:
     except tomllib.TOMLDecodeError as exc:
         raise ConfigError(f"configuration TOML invalide: {exc}") from exc
 
-    account = raw.get("account", {})
     meta = raw.get("meta", {})
     schema_version = meta.get("schema_version", 1)
     if not isinstance(schema_version, int) or isinstance(schema_version, bool):
         raise ConfigError("meta.schema_version doit être un entier")
     if schema_version != 1:
         raise ConfigError(f"version de configuration non prise en charge: {schema_version}")
-    site = str(account.get("site", "")).strip().rstrip("/")
-    email = str(account.get("email", "")).strip()
-    if not site.startswith("https://"):
-        raise ConfigError("account.site doit utiliser https://")
-    if not email or "@" not in email:
-        raise ConfigError("account.email est manquant ou invalide")
-    if "key" in account or "api_key" in account:
-        raise ConfigError("la clé API ne doit pas être stockée dans config.toml")
+    accounts = _accounts(raw)
 
     bridge = raw.get("bridge", {})
     limit = int(_number(bridge, "recent_message_limit", 30))
@@ -187,7 +263,7 @@ def load_config(path: Path) -> BridgeConfig:
         raise ConfigError("workspace.launch_command doit être une liste de chaînes non vides")
 
     return BridgeConfig(
-        AccountConfig(site, email),
+        accounts,
         notification_config,
         OpenConfig(mode, tuple(desktop_command)),
         WorkspaceConfig(workspace_name, class_pattern, tuple(launch_command)),
