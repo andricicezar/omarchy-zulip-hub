@@ -10,6 +10,7 @@ from typing import Any, TextIO
 from urllib.parse import urlsplit
 
 from .api import ZulipAPIError, ZulipClient
+from .browser_login import LoginError, LoginManager
 from .config import MAX_ACCOUNTS, AccountConfig, ConfigError, Paths, load_config
 from .files import write_atomic
 from .limits import encoded_response
@@ -18,6 +19,17 @@ from .secrets import SecretError, SecretToolProvider
 
 class OnboardingError(RuntimeError):
     """A graphical onboarding request was invalid or failed."""
+
+
+# Actions de connexion sans clé, traitées par browser_login.LoginManager.
+LOGIN_ACTIONS = {
+    "login_methods": "methods",
+    "login_start": "start",
+    "login_status": "status",
+    "login_cancel": "cancel",
+    "login_password": "password",
+    "import_zuliprc": "import_zuliprc",
+}
 
 
 @dataclass
@@ -440,6 +452,10 @@ class OnboardingManager:
             return self.disconnect()
         if action == "remove_account":
             return self.remove_account(request)
+        if action in LOGIN_ACTIONS:
+            assert self.state_path is not None
+            login = LoginManager(self, self.state_path.parent)
+            return getattr(login, LOGIN_ACTIONS[action])(request)
         if action == "save_settings":
             return self.save_settings(request)
         if action == "diagnostics":
@@ -462,7 +478,9 @@ def serve_once(
         if not isinstance(request, dict):
             raise OnboardingError("La requête d’onboarding doit être un objet JSON.")
         response = OnboardingManager(config_path or Paths.defaults().config).handle(request)
-    except (OnboardingError, ZulipAPIError, SecretError, ConfigError, json.JSONDecodeError) as exc:
+    except (
+        OnboardingError, LoginError, ZulipAPIError, SecretError, ConfigError, json.JSONDecodeError,
+    ) as exc:
         response = {"ok": False, "error": str(exc)}
     output_stream.write(encoded_response(response))
     output_stream.flush()

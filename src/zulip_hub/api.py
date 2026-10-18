@@ -96,8 +96,11 @@ def _retry_after(body: object) -> float | None:
 class ZulipClient:
     def __init__(self, site: str, email: str, api_key: str, timeout: int = 90):
         self.site = _canonical_site(site)
-        token = base64.b64encode(f"{email}:{api_key}".encode()).decode()
-        self.headers = {"Authorization": f"Basic {token}", "User-Agent": "omarchy-zulip-hub/2.0"}
+        self.headers = {"User-Agent": "omarchy-zulip-hub/2.0"}
+        # Sans identité, le client ne sert qu’aux points d’accès publics.
+        if email or api_key:
+            token = base64.b64encode(f"{email}:{api_key}".encode()).decode()
+            self.headers["Authorization"] = f"Basic {token}"
         self.timeout = timeout
         # Ouvreur privé : l’ouvreur global du processus suivrait les
         # redirections sans regarder l’origine.
@@ -157,6 +160,18 @@ class ZulipClient:
                 "apply_markdown": False,
             },
         )
+
+    @classmethod
+    def anonymous(cls, site: str, timeout: int = 15) -> "ZulipClient":
+        return cls(site, "", "", timeout)
+
+    def server_settings(self) -> dict[str, Any]:
+        """Réglages publics du serveur : nom, méthodes de connexion."""
+        return self._request("GET", "server_settings", {})
+
+    def fetch_api_key(self, username: str, password: str) -> dict[str, Any]:
+        """Échange identifiant et mot de passe contre la clé API du compte."""
+        return self._request("POST", "fetch_api_key", {"username": username, "password": password})
 
     def test_connection(self) -> dict[str, Any]:
         return self._request("GET", "users/me", {})

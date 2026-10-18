@@ -28,7 +28,21 @@ arguments.
 omarchy plugin add https://github.com/valentin-briez-banuls/omarchy-zulip-hub.git --enable
 ```
 
-Open the bar widget and enter the Zulip server URL, account email, and API key.
+Open the bar widget, enter the Zulip server URL, and choose
+**Find sign-in options**. The panel offers whatever the server supports:
+
+- **Sign in with Google / GitHub / GitLab / …** opens your browser on the
+  server's own login page. This is the flow the Zulip mobile apps use: the
+  server hands the API key back through a `zulip://login` link, encrypted with
+  a one-time pad only the local bridge knows. Zulip Hub registers itself as
+  the `zulip://` handler only while a sign-in is pending (at most ten minutes)
+  and restores the previous handler afterwards.
+- **Sign in with password**, when the server allows it; the password is used
+  once to fetch the key and never stored.
+- **Import zuliprc files from Downloads**, for keys downloaded from Zulip's
+  *Account & privacy → Manage your API key*; imported files are deleted.
+- **Use an API key instead**, to paste a key by hand.
+
 No terminal is needed after the plugin has been added.
 
 ## Multiple Zulip servers

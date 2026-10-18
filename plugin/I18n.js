@@ -43,7 +43,12 @@ var strings = {
     shortcutsEnabled: "Raccourcis Omarchy activés.", shortcutsDisabled: "Raccourcis Omarchy retirés.", working: "Traitement…",
     accounts: "COMPTES ZULIP", addAccount: "Ajouter un compte Zulip", newAccount: "NOUVEAU COMPTE ZULIP",
     accountName: "Nom affiché (facultatif)", removeAccount: "Retirer ce compte", missingKey: "clé absente",
-    fromAccount: "Compte"
+    fromAccount: "Compte",
+    findMethods: "Chercher les options de connexion", signInWith: "Se connecter avec %1",
+    passwordPlaceholder: "Mot de passe Zulip", passwordSignIn: "Se connecter avec le mot de passe",
+    useApiKey: "Utiliser une clé API", hideApiKey: "Masquer la saisie de clé API",
+    importZuliprc: "Importer les zuliprc du dossier Téléchargements",
+    waitingBrowser: "Terminez la connexion dans le navigateur…", cancel: "Annuler"
   },
   en: {
     connected: "Connected", offline: "Offline", waiting: "Waiting for bridge",
@@ -87,7 +92,12 @@ var strings = {
     shortcutsEnabled: "Omarchy shortcuts enabled.", shortcutsDisabled: "Omarchy shortcuts removed.", working: "Working…",
     accounts: "ZULIP ACCOUNTS", addAccount: "Add Zulip account", newAccount: "NEW ZULIP ACCOUNT",
     accountName: "Display name (optional)", removeAccount: "Remove this account", missingKey: "key missing",
-    fromAccount: "Account"
+    fromAccount: "Account",
+    findMethods: "Find sign-in options", signInWith: "Sign in with %1",
+    passwordPlaceholder: "Zulip password", passwordSignIn: "Sign in with password",
+    useApiKey: "Use an API key instead", hideApiKey: "Hide API key entry",
+    importZuliprc: "Import zuliprc files from Downloads",
+    waitingBrowser: "Complete the sign-in in your browser…", cancel: "Cancel"
   }
 }
 

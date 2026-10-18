@@ -1,5 +1,22 @@
 # Historique des versions
 
+## 2.6.0 — 2026-10-18
+
+- **Connexion sans clé API.** L'ajout d'un compte ne demande plus que l'adresse
+  du serveur : le panneau lit ses méthodes de connexion publiques
+  (`/api/v1/server_settings`) et propose un bouton par méthode (Google,
+  GitHub, GitLab…), ainsi que la connexion par mot de passe quand le serveur
+  l'accepte. La connexion par navigateur suit le flux officiel des
+  applications mobiles Zulip : la clé revient vers `zulip://login`, chiffrée
+  par un masque jetable que seul le pont connaît. Le gestionnaire `zulip://`
+  n'est associé que le temps de la connexion (dix minutes au plus), puis le
+  précédent est rétabli. Le mot de passe sert une fois à `fetch_api_key` et
+  n'est jamais conservé ; l'adresse e-mail et le nom du compte viennent du
+  serveur.
+- **Import des zuliprc** du dossier Téléchargements, supprimés une fois
+  importés puisqu'ils contiennent la clé en clair.
+- La saisie manuelle de la clé API reste disponible.
+
 ## 2.5.0 — 2026-10-18
 
 - **Plusieurs serveurs Zulip.** La configuration accepte une liste

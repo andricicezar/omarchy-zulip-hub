@@ -21,6 +21,9 @@ Panel {
   property string actionError: ""
   property string actionMessage: ""
   property bool osIntegrationInstalled: false
+  // Saisie manuelle de la clé API : repli quand ni navigateur ni mot de passe
+  // ne conviennent.
+  property bool useApiKey: false
   property string osResponseLine: ""
   readonly property string runnerPath: decodeURIComponent(
     String(Qt.resolvedUrl("../run-plugin.py")).replace(/^file:\/\//, ""))
@@ -60,6 +63,10 @@ Panel {
     settingsOpen: false, diagnosticsOpen: false, settings: ({}), diagnostics: ({}),
     site: "", email: "", service: "unknown", message: "", error: "",
     accounts: [], maxAccounts: 16, editingSite: "",
+    methods: [], methodsLoaded: false, passwordAvailable: false, realmName: "", loginPending: false,
+    clearMethods: function() {}, loadMethods: function() { return false },
+    startLogin: function() { return false }, passwordLogin: function() { return false },
+    cancelLogin: function() {}, importZuliprc: function() {},
     refresh: function() {}, setup: function() { return false }, removeAccount: function() { return false },
     activate: function() {}, deactivate: function() {}, disconnect: function() {},
     saveSettings: function() { return false }, loadDiagnostics: function() {}, reconnect: function() {}
@@ -129,6 +136,11 @@ Panel {
     emailField.text = account ? String(account.email || "") : ""
     nameField.text = account ? String(account.name || "") : ""
     apiKeyField.text = ""
+    passwordField.text = ""
+    root.useApiKey = false
+    onboarding.clearMethods()
+    // Un compte existant : ses options de connexion sont cherchées d’emblée.
+    if (account && account.site) Qt.callLater(function() { onboarding.loadMethods(account.site) })
   }
 
   function beginAccountEdit(account) {
@@ -170,8 +182,12 @@ Panel {
   function focusTargets() {
     var rows = []
     if (root.showSetup) {
-      appendTarget(rows, nameField); appendTarget(rows, siteField); appendTarget(rows, emailField); appendTarget(rows, apiKeyField)
-      appendTarget(rows, connectButton); appendTarget(rows, disconnectButton)
+      appendTarget(rows, nameField); appendTarget(rows, siteField); appendTarget(rows, findMethodsButton)
+      appendChildren(rows, methodList)
+      appendTarget(rows, emailField); appendTarget(rows, passwordField); appendTarget(rows, passwordButton)
+      appendTarget(rows, apiKeyField); appendTarget(rows, connectButton)
+      appendTarget(rows, cancelLoginButton); appendTarget(rows, apiKeyToggle)
+      appendTarget(rows, disconnectButton); appendTarget(rows, importButton)
     } else if (root.showComposer) {
       appendTarget(rows, composeNavButton)
       if (!composer.replying) {
@@ -452,7 +468,7 @@ Panel {
       id: keyCatcher
       anchors.fill: parent
       blocked: siteField.activeFocus || emailField.activeFocus || apiKeyField.activeFocus
-        || nameField.activeFocus || composeAccountField.activeFocus
+        || nameField.activeFocus || composeAccountField.activeFocus || passwordField.activeFocus
         || composeSearchField.activeFocus || composeField.activeFocus
         || groupWindowField.activeFocus || mutedChannelsField.activeFocus
         || alwaysChannelsField.activeFocus || desktopCommandField.activeFocus
@@ -610,16 +626,54 @@ Panel {
               width: parent.width
               placeholderText: "https://zulip.votre-entreprise.fr"
               inputMethodHints: Qt.ImhUrlCharactersOnly | Qt.ImhNoAutoUppercase
-              enabled: !onboarding.busy
+              enabled: !onboarding.busy && !onboarding.loginPending
               Accessible.name: "URL du serveur Zulip"
+              // Les méthodes affichées sont celles du serveur saisi, pas d’un autre.
+              onTextEdited: onboarding.clearMethods()
+              onAccepted: findMethodsButton.clicked()
               hasCursor: root.hasCursor(this)
               function keyboardActivate() { forceActiveFocus() }
               onHoveredChanged: if (hovered) root.selectTarget(this)
               Keys.onPressed: function(event) { if (event.key === Qt.Key_Escape) { root.leaveEditor(); event.accepted = true } }
             }
 
+            Button {
+              id: findMethodsButton
+              visible: !onboarding.methodsLoaded && !onboarding.loginPending
+              width: parent.width
+              text: onboarding.busy ? root.t("checking") : root.t("findMethods")
+              enabled: !onboarding.busy && siteField.text.trim() !== ""
+              onClicked: onboarding.loadMethods(siteField.text)
+              hasCursor: root.hasCursor(this)
+              focusable: true
+              function keyboardActivate() { clicked() }
+              onHovered: function(isHovered) { if (isHovered) root.selectTarget(this) }
+            }
+
+            Column {
+              id: methodList
+              visible: onboarding.methodsLoaded && !onboarding.loginPending
+              width: parent.width
+              spacing: Style.space(6)
+              Repeater {
+                model: onboarding.methods
+                Button {
+                  required property var modelData
+                  width: methodList.width
+                  text: root.t("signInWith").replace("%1", String(modelData.display_name || modelData.name))
+                  enabled: !onboarding.busy
+                  onClicked: onboarding.startLogin(siteField.text, modelData.name,
+                                                   nameField.text, onboarding.editingSite)
+                  hasCursor: root.hasCursor(this); focusable: true; function keyboardActivate() { clicked() }
+                  onHovered: function(isHovered) { if (isHovered) root.selectTarget(this) }
+                }
+              }
+            }
+
             TextField {
               id: emailField
+              visible: !onboarding.loginPending
+                && ((onboarding.methodsLoaded && onboarding.passwordAvailable) || root.useApiKey)
               width: parent.width
               placeholderText: "prenom.nom@entreprise.fr"
               inputMethodHints: Qt.ImhEmailCharactersOnly | Qt.ImhNoAutoUppercase
@@ -632,7 +686,43 @@ Panel {
             }
 
             TextField {
+              id: passwordField
+              visible: !onboarding.loginPending && !root.useApiKey
+                && onboarding.methodsLoaded && onboarding.passwordAvailable
+              width: parent.width
+              placeholderText: root.t("passwordPlaceholder")
+              echoMode: TextInput.Password
+              passwordCharacter: "●"
+              enabled: !onboarding.busy
+              Accessible.name: root.t("passwordPlaceholder")
+              onAccepted: passwordButton.clicked()
+              hasCursor: root.hasCursor(this)
+              function keyboardActivate() { forceActiveFocus() }
+              onHoveredChanged: if (hovered) root.selectTarget(this)
+              Keys.onPressed: function(event) { if (event.key === Qt.Key_Escape) { root.leaveEditor(); event.accepted = true } }
+            }
+
+            Button {
+              id: passwordButton
+              visible: passwordField.visible
+              width: parent.width
+              text: onboarding.busy ? root.t("checking") : root.t("passwordSignIn")
+              enabled: !onboarding.busy && emailField.text.trim() !== "" && passwordField.text !== ""
+              onClicked: {
+                var secret = passwordField.text
+                if (onboarding.passwordLogin(siteField.text, emailField.text, secret,
+                                             nameField.text, onboarding.editingSite)) {
+                  passwordField.text = ""
+                  secret = ""
+                }
+              }
+              hasCursor: root.hasCursor(this); focusable: true; function keyboardActivate() { clicked() }
+              onHovered: function(isHovered) { if (isHovered) root.selectTarget(this) }
+            }
+
+            TextField {
               id: apiKeyField
+              visible: root.useApiKey && !onboarding.loginPending
               width: parent.width
               placeholderText: onboarding.editingSite !== ""
                 ? "Nouvelle clé API (requise pour retester)"
@@ -648,25 +738,59 @@ Panel {
               Keys.onPressed: function(event) { if (event.key === Qt.Key_Escape) { root.leaveEditor(); event.accepted = true } }
             }
 
+            Button {
+              id: connectButton
+              visible: apiKeyField.visible
+              width: parent.width
+              text: onboarding.busy ? root.t("checking") : root.t("testActivate")
+              enabled: !onboarding.busy && siteField.text.trim() !== ""
+                && emailField.text.trim() !== "" && apiKeyField.text.trim() !== ""
+              onClicked: {
+                var secret = apiKeyField.text
+                if (onboarding.setup(siteField.text, emailField.text, secret,
+                                     nameField.text, onboarding.editingSite)) {
+                  apiKeyField.text = ""
+                  secret = ""
+                }
+              }
+              hasCursor: root.hasCursor(this)
+              focusable: true
+              function keyboardActivate() { clicked() }
+              onHovered: function(isHovered) { if (isHovered) root.selectTarget(this) }
+            }
+
+            Text {
+              visible: onboarding.loginPending
+              width: parent.width
+              text: root.t("waitingBrowser")
+              textFormat: Text.PlainText
+              wrapMode: Text.WordWrap
+              color: root.foreground
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.body
+            }
+
+            Button {
+              id: cancelLoginButton
+              visible: onboarding.loginPending
+              width: parent.width
+              text: root.t("cancel")
+              enabled: !onboarding.busy
+              onClicked: onboarding.cancelLogin()
+              hasCursor: root.hasCursor(this); focusable: true; function keyboardActivate() { clicked() }
+              onHovered: function(isHovered) { if (isHovered) root.selectTarget(this) }
+            }
+
             RowLayout {
+              visible: !onboarding.loginPending
               width: parent.width
               spacing: Style.space(8)
               Button {
-                id: connectButton
-                text: onboarding.busy ? root.t("checking") : root.t("testActivate")
-                enabled: !onboarding.busy && siteField.text.trim() !== ""
-                  && emailField.text.trim() !== "" && apiKeyField.text.trim() !== ""
-                onClicked: {
-                  var secret = apiKeyField.text
-                  if (onboarding.setup(siteField.text, emailField.text, secret,
-                                       nameField.text, onboarding.editingSite)) {
-                    apiKeyField.text = ""
-                    secret = ""
-                  }
-                }
-                hasCursor: root.hasCursor(this)
-                focusable: true
-                function keyboardActivate() { clicked() }
+                id: apiKeyToggle
+                text: root.useApiKey ? root.t("hideApiKey") : root.t("useApiKey")
+                enabled: !onboarding.busy
+                onClicked: root.useApiKey = !root.useApiKey
+                hasCursor: root.hasCursor(this); focusable: true; function keyboardActivate() { clicked() }
                 onHovered: function(isHovered) { if (isHovered) root.selectTarget(this) }
               }
               Button {
@@ -680,6 +804,17 @@ Panel {
                 function keyboardActivate() { clicked() }
                 onHovered: function(isHovered) { if (isHovered) root.selectTarget(this) }
               }
+            }
+
+            Button {
+              id: importButton
+              visible: !onboarding.loginPending && onboarding.editingSite === ""
+              width: parent.width
+              text: root.t("importZuliprc")
+              enabled: !onboarding.busy
+              onClicked: onboarding.importZuliprc()
+              hasCursor: root.hasCursor(this); focusable: true; function keyboardActivate() { clicked() }
+              onHovered: function(isHovered) { if (isHovered) root.selectTarget(this) }
             }
 
             Text {

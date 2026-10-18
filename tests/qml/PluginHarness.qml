@@ -172,6 +172,23 @@ ShellRoot {
         Qt.exit(1)
         return
       }
+      plugin.onboardingController.methods = [{name: "google", display_name: "Google"}]
+      plugin.onboardingController.passwordAvailable = true
+      plugin.onboardingController.methodsLoaded = true
+      var labels = plugin.focusTargets().map(function(item) { return String(item.text || "") })
+      if (labels.indexOf("Sign in with Google") === -1 && labels.indexOf("Se connecter avec Google") === -1) {
+        console.error("ZULIP_HUB_LOGIN_METHODS_NOT_SHOWN " + JSON.stringify(labels))
+        Qt.exit(1)
+        return
+      }
+      plugin.onboardingController.loginPending = true
+      if (plugin.focusTargets().map(function(item) { return item.text }).indexOf(plugin.t("cancel")) === -1) {
+        console.error("ZULIP_HUB_LOGIN_PENDING_NOT_SHOWN")
+        Qt.exit(1)
+        return
+      }
+      plugin.onboardingController.loginPending = false
+      plugin.onboardingController.clearMethods()
       plugin.onboardingController.editing = false
       plugin.composerController.startReply({
         id: 42, type: "private", sender: "Bob", site: "https://b.example.org", account: "B"

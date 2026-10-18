@@ -17,7 +17,8 @@ from .links import LinkError, summary_url
 from .marketplace import IntegrationError, run_action
 from .hyprland import HyprlandController, HyprlandError, resolve_launch_command
 from .notifications import NotificationCoordinator
-from .onboarding import serve_once
+from .browser_login import LoginManager
+from .onboarding import OnboardingManager, serve_once
 from .opening import OpenError, UrlOpener
 from .reader import serve_once as serve_reader_once
 from .secrets import SecretError, SecretToolProvider
@@ -45,6 +46,8 @@ def parser() -> argparse.ArgumentParser:
     sub.add_parser("workspace-toggle", help="afficher, masquer ou lancer le workspace Zulip")
     sub.add_parser("workspace-status", help="diagnostiquer la détection de la fenêtre Zulip")
     sub.add_parser("onboarding", help=argparse.SUPPRESS)
+    finish_login = sub.add_parser("finish-login", help=argparse.SUPPRESS)
+    finish_login.add_argument("url")
     sub.add_parser("compose", help=argparse.SUPPRESS)
     sub.add_parser("read-message", help=argparse.SUPPRESS)
     os_integration = sub.add_parser("os-integration", help=argparse.SUPPRESS)
@@ -60,6 +63,11 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.command == "onboarding":
             return serve_once(args.config)
+        if args.command == "finish-login":
+            manager = OnboardingManager(config_path, state_path=state_path)
+            outcome = LoginManager(manager, state_path.parent).finish(args.url)
+            print(outcome.get("message") or outcome.get("error") or "")
+            return 0 if outcome.get("ok") else 2
         if args.command == "compose":
             return serve_composer_once(args.config, args.state)
         if args.command == "read-message":
