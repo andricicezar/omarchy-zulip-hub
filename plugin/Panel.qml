@@ -25,6 +25,7 @@ Panel {
   // ne conviennent.
   property bool useApiKey: false
   property string osResponseLine: ""
+  property string osAction: ""
   readonly property string runnerPath: decodeURIComponent(
     String(Qt.resolvedUrl("../run-plugin.py")).replace(/^file:\/\//, ""))
   readonly property string localeName: Qt.locale().name
@@ -355,6 +356,7 @@ Panel {
     root.actionError = ""
     root.actionMessage = ""
     root.osResponseLine = ""
+    root.osAction = action
     osProcess.command = ["/usr/bin/python3", root.runnerPath, "os-integration", action]
     osProcess.running = true
   }
@@ -1674,7 +1676,8 @@ Panel {
         try {
           var response = JSON.parse(root.osResponseLine)
           root.osIntegrationInstalled = response.installed === true
-          if (exitCode === 0) root.actionMessage = root.osIntegrationInstalled
+          // La simple lecture de l’état, à chaque ouverture, n’annonce rien.
+          if (exitCode === 0 && root.osAction !== "status") root.actionMessage = root.osIntegrationInstalled
             ? root.t("shortcutsEnabled") : root.t("shortcutsDisabled")
         } catch (exception) {
           root.actionError = root.t("invalidLocal")

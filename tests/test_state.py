@@ -113,3 +113,20 @@ class StateTests(unittest.TestCase):
         }})
         reducer.apply({"type": "update_message_flags", "flag": "read", "op": "add", "all": True, "messages": []})
         self.assertEqual(reducer.state.unread, {"total": 0, "mentions": 0, "private": 0})
+
+
+class ZulipUnreadFormatTests(unittest.TestCase):
+    def test_register_unread_msgs_in_server_format(self):
+        from zulip_hub.state import StateReducer
+        reducer = StateReducer()
+        reducer.initialized({"unread_msgs": {
+            "count": 6,
+            "pms": [{"other_user_id": 8, "sender_id": 8, "unread_message_ids": [1, 2]}],
+            "huddles": [{"user_ids_string": "1,8,9", "unread_message_ids": [3]}],
+            "streams": [
+                {"stream_id": 7, "topic": "a", "unread_message_ids": [4, 5]},
+                {"stream_id": 7, "topic": "b", "unread_message_ids": [6]},
+            ],
+            "mentions": [4],
+        }})
+        self.assertEqual(reducer.state.unread, {"total": 6, "mentions": 1, "private": 3})

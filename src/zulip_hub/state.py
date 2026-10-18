@@ -218,12 +218,9 @@ class StateReducer:
         unread = registration.get("unread_msgs", {})
         if not isinstance(unread, dict):
             unread = {}
-        mention_ids = set(bounded_list(unread.get("mentions", [])))
-        private_ids = set(bounded_list(unread.get("pms", [])))
-        stream_ids: set[int] = set()
-        for entry in bounded_list(unread.get("streams", [])):
-            if isinstance(entry, list) and len(entry) == 2 and isinstance(entry[1], list):
-                stream_ids.update(bounded_list(entry[1]))
+        mention_ids = self._ids(unread.get("mentions", []))
+        private_ids = self._ids(unread.get("pms", [])) | self._ids(unread.get("huddles", []))
+        stream_ids = self._ids(unread.get("streams", []))
         self._mention_ids = mention_ids
         self._private_ids = private_ids
         self._unread_ids = mention_ids | private_ids | stream_ids
@@ -273,6 +270,27 @@ class StateReducer:
         self.state.connected = True
         self.state.error = None
         self.state.last_sync = utc_now()
+
+    @staticmethod
+    def _ids(entries: Any) -> set[int]:
+        """Identifiants des messages non lus, quelle que soit la forme reçue.
+
+        Zulip envoie des objets portant ``unread_message_ids`` pour les
+        messages directs, les groupes et les canaux, et des identifiants nus
+        pour les mentions ; les paires ``[clé, [ids]]`` restent acceptées.
+        """
+        result: set[int] = set()
+        for entry in bounded_list(entries):
+            if isinstance(entry, dict):
+                values = bounded_list(entry.get("unread_message_ids", []))
+            elif isinstance(entry, list) and len(entry) == 2 and isinstance(entry[1], list):
+                values = bounded_list(entry[1])
+            else:
+                values = [entry]
+            result.update(
+                value for value in values if isinstance(value, int) and not isinstance(value, bool)
+            )
+        return result
 
     def _sync_counts(self) -> None:
         self.state.unread = {

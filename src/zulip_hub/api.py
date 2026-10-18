@@ -156,7 +156,9 @@ class ZulipClient:
             "POST", "register",
             {
                 "event_types": ["message", "update_message_flags", "user_topic"],
-                "fetch_event_types": ["message", "user_topic"],
+                # unread_msgs n’est renvoyé que si message et
+                # update_message_flags sont tous deux demandés.
+                "fetch_event_types": ["message", "update_message_flags", "user_topic"],
                 "apply_markdown": False,
             },
         )

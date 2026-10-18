@@ -1,5 +1,15 @@
 # Historique des versions
 
+## 2.8.1 — 2026-10-18
+
+- **Les non lus existants sont comptés.** Le serveur ne renvoie `unread_msgs`
+  que si `message` et `update_message_flags` sont tous deux demandés à
+  l'enregistrement ; seul le premier l'était, et les compteurs partaient de
+  zéro. Le format réel (objets portant `unread_message_ids`, groupes compris)
+  est désormais lu.
+- « Raccourcis Omarchy retirés » ne s'affiche plus à chaque ouverture du
+  panneau : la lecture de l'état n'est pas une action.
+
 ## 2.8.0 — 2026-10-18
 
 - **Le panneau montre chaque compte.** Avec plusieurs comptes, les trois
