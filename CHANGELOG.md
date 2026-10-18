@@ -1,5 +1,16 @@
 # Historique des versions
 
+## 2.9.0 — 2026-10-18
+
+- **Ouvrir l'application d'un compte.** Sur une ligne de compte, `O`, un
+  double-clic ou le bouton ↗ met au premier plan la fenêtre d'application web
+  de ce serveur, ou la lance si elle n'est pas ouverte — le comportement
+  d'`omarchy-launch-or-focus`, sans passer l'adresse par `eval`. La mise au
+  premier plan emploie la syntaxe Lua de Hyprland 0.56, puis l'ancienne.
+- **Les messages s'ouvrent dans l'application web** du compte plutôt que dans
+  un onglet : nouveau mode `open.mode = "webapp"`, préféré par `auto` quand
+  aucun client desktop n'est configuré. `browser` garde l'ancien comportement.
+
 ## 2.8.1 — 2026-10-18
 
 - **Les non lus existants sont comptés.** Le serveur ne renvoie `unread_msgs`

@@ -110,6 +110,7 @@ is only there for those who prefer the terminal.
 - `O` — open the selected message in Zulip
 - `Ctrl+Enter` — send the message
 - `X` — mark the selected message as read
+- `O` or double-click on an account — open or focus its web app
 - `R` — refresh
 - `Escape` — go back or close
 

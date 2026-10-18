@@ -19,7 +19,7 @@ from .hyprland import HyprlandController, HyprlandError, resolve_launch_command
 from .notifications import NotificationCoordinator
 from .browser_login import LoginManager
 from .onboarding import OnboardingManager, serve_once
-from .opening import OpenError, UrlOpener
+from .opening import AccountOpener, OpenError, UrlOpener
 from .reader import serve_once as serve_reader_once
 from .secrets import SecretError, SecretToolProvider
 from .state import MergedStateStore, StateReducer, StateStore, recent_row
@@ -40,6 +40,8 @@ def parser() -> argparse.ArgumentParser:
     open_message = sub.add_parser("open-message", help="ouvrir un message récent par son identifiant")
     open_message.add_argument("message_id", type=int)
     open_message.add_argument("--site", help="serveur du message")
+    open_account = sub.add_parser("open-account", help="afficher ou lancer l’application web d’un compte")
+    open_account.add_argument("--site", required=True, help="serveur du compte")
     mark_read = sub.add_parser("mark-read", help="marquer un message comme lu")
     mark_read.add_argument("message_id", type=int)
     mark_read.add_argument("--site", help="serveur du message (par défaut : le premier compte)")
@@ -106,6 +108,11 @@ def main(argv: list[str] | None = None) -> int:
             # Le serveur vient de l’état, et doit encore être un compte configuré.
             account = config.account_for(row.get("site") or args.site)
             UrlOpener(config.opening).open(summary_url(account.site, row))
+            return 0
+        if args.command == "open-account":
+            account = config.account_for(args.site)
+            controller = HyprlandController(config.workspace, resolve_launch_command(config))
+            print(AccountOpener(controller).open(account.site))
             return 0
         if args.command in {"workspace-toggle", "workspace-status"}:
             controller = HyprlandController(

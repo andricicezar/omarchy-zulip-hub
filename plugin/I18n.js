@@ -24,7 +24,7 @@ var strings = {
     backSettings: "Retour aux réglages", refresh: "Actualiser", reconnect: "Reconnecter",
     total: "TOTAL", direct: "DIRECT", recentUnread: "NON LUS RÉCENTS",
     noRecent: "Aucune conversation non lue récente.",
-    homeHelp: "↑/↓ ou j/k naviguent • Entrée affiche • A répond • O ouvre dans Zulip • X marque comme lu • R actualise • Échap ferme",
+    homeHelp: "↑/↓ ou j/k naviguent • Entrée affiche ou filtre • A répond • O ouvre dans Zulip • X marque comme lu • R actualise • Échap ferme",
     configureHelp: "Tab navigue • Entrée édite ou active • Échap revient",
     composeHelp: "Tab navigue • Entrée sélectionne • Ctrl+Entrée envoie • Échap revient",
     directConversation: "Message direct", channelMessage: "Message de canal",
@@ -50,7 +50,8 @@ var strings = {
     importZuliprc: "Importer les zuliprc du dossier Téléchargements",
     waitingBrowser: "Terminez la connexion dans le navigateur…", cancel: "Annuler",
     createLaunchers: "Un lanceur Omarchy par compte (Super+Espace)",
-    connectedAccounts: "%1 COMPTES ZULIP", accountsCount: "%1 comptes"
+    connectedAccounts: "%1 COMPTES ZULIP", accountsCount: "%1 comptes",
+    openAccount: "Ouvrir l’application Zulip (O, double-clic)"
   },
   en: {
     connected: "Connected", offline: "Offline", waiting: "Waiting for bridge",
@@ -75,7 +76,7 @@ var strings = {
     backSettings: "Back to settings", refresh: "Refresh", reconnect: "Reconnect",
     total: "TOTAL", direct: "DIRECT", recentUnread: "RECENT UNREAD",
     noRecent: "No recent unread conversations.",
-    homeHelp: "↑/↓ or j/k navigate • Enter shows • A replies • O opens in Zulip • X marks read • R refreshes • Esc closes",
+    homeHelp: "↑/↓ or j/k navigate • Enter shows or filters • A replies • O opens in Zulip • X marks read • R refreshes • Esc closes",
     configureHelp: "Tab navigates • Enter edits or activates • Esc goes back",
     composeHelp: "Tab navigates • Enter selects • Ctrl+Enter sends • Esc goes back",
     directConversation: "Direct message", channelMessage: "Channel message",
@@ -101,7 +102,8 @@ var strings = {
     importZuliprc: "Import zuliprc files from Downloads",
     waitingBrowser: "Complete the sign-in in your browser…", cancel: "Cancel",
     createLaunchers: "An Omarchy launcher per account (Super+Space)",
-    connectedAccounts: "%1 ZULIP ACCOUNTS", accountsCount: "%1 accounts"
+    connectedAccounts: "%1 ZULIP ACCOUNTS", accountsCount: "%1 accounts",
+    openAccount: "Open the Zulip web app (O, double-click)"
   }
 }
 

@@ -107,6 +107,19 @@ class HyprlandController:
         if result.returncode != 0:
             raise HyprlandError(f"dispatch Hyprland refusé: {dispatcher}")
 
+    def focus_window(self, address: str) -> None:
+        """Met une fenêtre au premier plan, avec la syntaxe Lua puis l’ancienne.
+
+        Depuis Hyprland 0.56, ``dispatch`` évalue du Lua : l’adresse y est
+        insérée, d’où sa vérification stricte avant tout.
+        """
+        if not re.fullmatch(r"0x[0-9a-fA-F]+", address):
+            raise HyprlandError("adresse de fenêtre invalide")
+        lua = f'hl.dsp.focus({{ window = "address:{address}" }})'
+        if self._run(["hyprctl", "dispatch", lua]).returncode == 0:
+            return
+        self.dispatch("focuswindow", f"address:{address}")
+
     def _json_command(self, command: list[str], label: str) -> Any:
         result = self._run(command)
         if result.returncode != 0:

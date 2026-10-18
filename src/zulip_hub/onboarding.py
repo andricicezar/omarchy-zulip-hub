@@ -223,7 +223,7 @@ class OnboardingManager:
         if not isinstance(group_window, int) or isinstance(group_window, bool) or not 1 <= group_window <= 300:
             raise OnboardingError("Le regroupement doit être compris entre 1 et 300 secondes.")
         open_mode = str(request.get("open_mode", "auto"))
-        if open_mode not in {"auto", "desktop", "browser"}:
+        if open_mode not in {"auto", "desktop", "webapp", "browser"}:
             raise OnboardingError("Le mode d’ouverture est invalide.")
         desktop_command = self._command(request, "desktop_command")
         launchers = request.get("launchers", True)

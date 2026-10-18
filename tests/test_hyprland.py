@@ -108,3 +108,34 @@ class HyprlandTests(unittest.TestCase):
             "omarchy-launch-webapp", "https://chat.example.com", "--class=zulip-hub",
         ])
 
+
+
+class FocusWindowTests(unittest.TestCase):
+    def controller(self, codes):
+        from zulip_hub.commands import CommandResult
+        from zulip_hub.config import WorkspaceConfig
+        from zulip_hub.hyprland import HyprlandController
+        calls = []
+
+        def run(argv, timeout):
+            calls.append(argv)
+            return CommandResult(codes.pop(0), "")
+
+        return HyprlandController(WorkspaceConfig(), [], run=run), calls
+
+    def test_lua_syntax_first(self):
+        controller, calls = self.controller([0])
+        controller.focus_window("0xabc")
+        self.assertEqual(calls, [["hyprctl", "dispatch", 'hl.dsp.focus({ window = "address:0xabc" })']])
+
+    def test_falls_back_to_classic_dispatch(self):
+        controller, calls = self.controller([1, 0])
+        controller.focus_window("0xabc")
+        self.assertEqual(calls[-1], ["hyprctl", "dispatch", "focuswindow", "address:0xabc"])
+
+    def test_address_is_validated_before_reaching_lua(self):
+        from zulip_hub.hyprland import HyprlandError
+        controller, calls = self.controller([0])
+        with self.assertRaises(HyprlandError):
+            controller.focus_window('0x1" }) os.execute("x') 
+        self.assertEqual(calls, [])

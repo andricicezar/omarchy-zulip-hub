@@ -235,8 +235,8 @@ def load_config(path: Path) -> BridgeConfig:
 
     opening = raw.get("open", {})
     mode = str(opening.get("mode", "auto")).strip().lower()
-    if mode not in {"auto", "desktop", "browser"}:
-        raise ConfigError("open.mode doit valoir auto, desktop ou browser")
+    if mode not in {"auto", "desktop", "webapp", "browser"}:
+        raise ConfigError("open.mode doit valoir auto, desktop, webapp ou browser")
     desktop_command = opening.get("desktop_command", [])
     if not isinstance(desktop_command, list) or not all(
         isinstance(item, str) and item for item in desktop_command

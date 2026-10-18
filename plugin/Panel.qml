@@ -337,6 +337,16 @@ Panel {
     composer.loadDirectory(false)
   }
 
+  // L’application web du compte : mise au premier plan si elle est ouverte,
+  // lancée sinon, comme omarchy-launch-or-focus.
+  function openAccount(account) {
+    if (!account || !account.site || accountProcess.running) return
+    actionError = ""
+    accountProcess.command = ["/usr/bin/python3", root.runnerPath, "open-account", "--site", String(account.site)]
+    accountProcess.running = true
+    close()
+  }
+
   function markMessageRead(row) {
     if (!row || readProcess.running) return
     actionError = ""
@@ -514,7 +524,11 @@ Panel {
       onTextKey: function(text) {
         if (text === "r" || text === "R") hub.refresh()
         else if (text === "a" || text === "A") root.replyToMessage(root.selectedMessage())
-        else if (text === "o" || text === "O") root.openInZulip(root.selectedMessage())
+        else if (text === "o" || text === "O") {
+          var target = root.cursorTarget()
+          if (target && target.account) root.openAccount(target.account)
+          else root.openInZulip(root.selectedMessage())
+        }
       }
 
       Flickable {
@@ -1257,7 +1271,7 @@ Panel {
             ComboBox {
               id: openModeField
               width: parent.width
-              model: ["auto", "desktop", "browser"]
+              model: ["auto", "desktop", "webapp", "browser"]
               currentIndex: Math.max(0, model.indexOf(String(onboarding.settings.open_mode || "auto")))
               property bool hasCursor: root.hasCursor(this)
               function keyboardActivate() { forceActiveFocus(); popup.open() }
@@ -1647,6 +1661,14 @@ Panel {
   }
 
   Process {
+    id: accountProcess
+    stderr: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: if (text.trim() !== "") root.actionError = text.trim()
+    }
+  }
+
+  Process {
     id: readProcess
     stderr: StdioCollector {
       waitForEnd: true
@@ -1758,6 +1780,11 @@ Panel {
       cursorShape: Qt.PointingHandCursor
       onEntered: root.selectTarget(accountRow)
       onClicked: root.toggleAccountFilter(accountRow.account.site)
+      // Le premier clic a déjà basculé le filtre : il est rétabli avant l’ouverture.
+      onDoubleClicked: {
+        root.toggleAccountFilter(accountRow.account.site)
+        root.openAccount(accountRow.account)
+      }
     }
 
     RowLayout {
@@ -1828,6 +1855,17 @@ Panel {
         font.family: root.fontFamily
         font.pixelSize: Style.font.heading
         font.bold: accountRow.account.unread.total > 0
+      }
+
+      PanelActionButton {
+        iconText: "↗"
+        tooltipText: root.t("openAccount")
+        foreground: root.foreground
+        hoverColor: root.foreground
+        fontFamily: root.fontFamily
+        enabled: !accountProcess.running
+        Layout.alignment: Qt.AlignVCenter
+        onClicked: root.openAccount(accountRow.account)
       }
     }
   }

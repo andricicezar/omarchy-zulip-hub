@@ -243,6 +243,11 @@ ShellRoot {
         Qt.exit(1)
         return
       }
+      if (typeof plugin.openAccount !== "function") {
+        console.error("ZULIP_HUB_OPEN_ACCOUNT_MISSING")
+        Qt.exit(1)
+        return
+      }
       accountRows[1].keyboardActivate()
       if (plugin.messageCount !== 1 || plugin.visibleRecent[0].sender !== "Bob"
           || plugin.accountFilterName !== "B") {
