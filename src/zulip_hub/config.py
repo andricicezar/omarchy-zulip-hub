@@ -88,6 +88,8 @@ class NotificationConfig:
 class OpenConfig:
     mode: str = "auto"
     desktop_command: tuple[str, ...] = ()
+    # Un lanceur Omarchy par compte, créé à la connexion, retiré à la déconnexion.
+    launchers: bool = True
 
 
 @dataclass(frozen=True)
@@ -240,6 +242,9 @@ def load_config(path: Path) -> BridgeConfig:
         isinstance(item, str) and item for item in desktop_command
     ):
         raise ConfigError("open.desktop_command doit être une liste de chaînes non vides")
+    launchers = opening.get("launchers", True)
+    if not isinstance(launchers, bool):
+        raise ConfigError("open.launchers doit être un booléen")
 
     workspace = raw.get("workspace", {})
     workspace_name = str(workspace.get("name", "zulip")).strip()
@@ -265,7 +270,7 @@ def load_config(path: Path) -> BridgeConfig:
     return BridgeConfig(
         accounts,
         notification_config,
-        OpenConfig(mode, tuple(desktop_command)),
+        OpenConfig(mode, tuple(desktop_command), launchers),
         WorkspaceConfig(workspace_name, class_pattern, tuple(launch_command)),
         limit,
         timeout,

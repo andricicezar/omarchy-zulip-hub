@@ -1,5 +1,15 @@
 # Historique des versions
 
+## 2.7.0 — 2026-10-18
+
+- **Un lanceur Omarchy par compte.** Une connexion réussie ajoute « <compte>
+  Zulip » au lanceur d'applications (Super+Espace) avec `omarchy-webapp-install`
+  et l'icône de l'organisation ; retirer le compte ou se déconnecter le
+  supprime. Un lanceur web créé à la main pour le même serveur est remplacé
+  plutôt que doublé. Seuls les lanceurs créés par Zulip Hub, notés dans
+  `launchers.json`, sont retirés. Réglage `open.launchers`, aussi dans le
+  panneau.
+
 ## 2.6.0 — 2026-10-18
 
 - **Connexion sans clé API.** L'ajout d'un compte ne demande plus que l'adresse

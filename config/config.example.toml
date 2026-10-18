@@ -26,6 +26,8 @@ mode = "auto"
 # Example for a desktop client accepting URLs:
 # desktop_command = ["zulip"]
 desktop_command = []
+# Add an Omarchy launcher (Super+Space) per account on sign-in; removed on sign-out.
+launchers = true
 
 [workspace]
 name = "zulip"

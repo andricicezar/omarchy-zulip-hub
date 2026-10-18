@@ -13,6 +13,7 @@ from .api import ZulipAPIError, ZulipClient
 from .browser_login import LoginError, LoginManager
 from .config import MAX_ACCOUNTS, AccountConfig, ConfigError, Paths, load_config
 from .files import write_atomic
+from .launchers import WebappLaunchers, launcher_name
 from .limits import encoded_response
 from .secrets import SecretError, SecretToolProvider
 
@@ -59,6 +60,7 @@ class OnboardingManager:
             "always_channels": list(notifications.always_channels),
             "open_mode": config.opening.mode,
             "desktop_command": list(config.opening.desktop_command),
+            "launchers": config.opening.launchers,
             "workspace_launch_command": list(config.workspace.launch_command),
             "desktop_command_text": shlex.join(config.opening.desktop_command),
             "workspace_launch_command_text": shlex.join(config.workspace.launch_command),
@@ -95,6 +97,25 @@ class OnboardingManager:
             account for account in config.accounts
             if not self._is_example(account.site, account.email)
         ]
+
+    @property
+    def launchers(self) -> WebappLaunchers:
+        assert self.state_path is not None
+        return WebappLaunchers(self.state_path.parent)
+
+    def _launchers_enabled(self) -> bool:
+        try:
+            return load_config(self.config_path).opening.launchers
+        except ConfigError:
+            return True
+
+    def _sync_launchers(self, enabled: bool) -> None:
+        """Le réglage change : lanceurs créés pour tous les comptes, ou retirés."""
+        for account in self._current_accounts():
+            if not enabled:
+                self.launchers.remove(account.site)
+            elif self._has_secret(account):
+                self.launchers.install(account.site, account.label)
 
     def _has_secret(self, account: AccountConfig) -> bool:
         try:
@@ -205,6 +226,10 @@ class OnboardingManager:
         if open_mode not in {"auto", "desktop", "browser"}:
             raise OnboardingError("Le mode d’ouverture est invalide.")
         desktop_command = self._command(request, "desktop_command")
+        launchers = request.get("launchers", True)
+        if not isinstance(launchers, bool):
+            raise OnboardingError("Le réglage launchers doit être un booléen.")
+        previous_launchers = self._launchers_enabled()
         workspace_command = self._command(request, "workspace_launch_command")
         original = self.config_path.read_text(encoding="utf-8")
         updated = self._replace_section(original, "notifications", [
@@ -219,7 +244,7 @@ class OnboardingManager:
             ("always_channels", self._channels(request, "always_channels")),
         ])
         updated = self._replace_section(updated, "open", [
-            ("mode", open_mode), ("desktop_command", desktop_command),
+            ("mode", open_mode), ("desktop_command", desktop_command), ("launchers", launchers),
         ])
         updated = self._replace_section(updated, "workspace", [
             ("launch_command", workspace_command),
@@ -231,6 +256,8 @@ class OnboardingManager:
             write_atomic(self.config_path, original, 0o600)
             raise
         self._request_restart()
+        if launchers != previous_launchers:
+            self._sync_launchers(launchers)
         result = self.status()
         result["message"] = "Réglages enregistrés."
         return result
@@ -380,11 +407,18 @@ class OnboardingManager:
                 self.secrets.delete(replaced.site, replaced.email)
             except SecretError:
                 pass
+        launcher_added = False
+        if self._launchers_enabled():
+            if replaced is not None and replaced.site != site:
+                self.launchers.remove(replaced.site)
+            launcher_added = self.launchers.install(site, updated.label)
         self._pause_path().unlink(missing_ok=True)
         self._request_restart()
         result = self.status()
         result["identity"] = str(identity.get("full_name") or identity.get("email") or email)
-        result["message"] = "Connexion réussie. Zulip Hub est actif."
+        result["message"] = "Connexion réussie. Zulip Hub est actif." + (
+            f" Lanceur « {launcher_name(updated.label)} » ajouté." if launcher_added else ""
+        )
         return result
 
     def remove_account(self, request: dict[str, Any]) -> dict[str, Any]:
@@ -399,6 +433,7 @@ class OnboardingManager:
         self._write_accounts([account for account in accounts if account is not target])
         assert self.secrets is not None
         self.secrets.delete(target.site, target.email)
+        self.launchers.remove(target.site)
         self._request_restart()
         result = self.status()
         result["message"] = f"Compte {target.label} retiré."
@@ -432,6 +467,7 @@ class OnboardingManager:
             self.deactivate()
             assert self.secrets is not None
             self.secrets.delete(config.account.site, config.account.email)
+            self.launchers.remove(config.account.site)
         except ConfigError as exc:
             raise OnboardingError(str(exc)) from exc
         result = self.status()

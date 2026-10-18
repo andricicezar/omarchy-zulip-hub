@@ -45,6 +45,13 @@ Open the bar widget, enter the Zulip server URL, and choose
 
 No terminal is needed after the plugin has been added.
 
+Each signed-in account also gets an Omarchy launcher (Super+Space), named
+"<account> Zulip" and using the organization's icon, created with
+`omarchy-webapp-install` and removed when the account is removed or
+disconnected. An existing web-app launcher for the same server is replaced
+rather than duplicated. Turn this off with **Settings → An Omarchy launcher
+per account** (`launchers = false` under `[open]`).
+
 ## Multiple Zulip servers
 
 Add further accounts from **Settings → Zulip accounts → Add Zulip account**.
@@ -114,6 +121,8 @@ Zulip Hub creates user-owned data only:
 - `~/.local/state/zulip-hub/` — public counters and control markers
 - Secret Service — one personal API key per account
 - optionally `~/.config/hypr/zulip_hub.lua` plus one managed include block
+- one web-app launcher per account in `~/.local/share/applications/`, listed in
+  `~/.local/state/zulip-hub/launchers.json`
 
 Message bodies and drafts are not persisted. Reading a message fetches its
 body on demand and keeps it in memory only; it is dropped when the panel

@@ -48,7 +48,8 @@ var strings = {
     passwordPlaceholder: "Mot de passe Zulip", passwordSignIn: "Se connecter avec le mot de passe",
     useApiKey: "Utiliser une clé API", hideApiKey: "Masquer la saisie de clé API",
     importZuliprc: "Importer les zuliprc du dossier Téléchargements",
-    waitingBrowser: "Terminez la connexion dans le navigateur…", cancel: "Annuler"
+    waitingBrowser: "Terminez la connexion dans le navigateur…", cancel: "Annuler",
+    createLaunchers: "Un lanceur Omarchy par compte (Super+Espace)"
   },
   en: {
     connected: "Connected", offline: "Offline", waiting: "Waiting for bridge",
@@ -97,7 +98,8 @@ var strings = {
     passwordPlaceholder: "Zulip password", passwordSignIn: "Sign in with password",
     useApiKey: "Use an API key instead", hideApiKey: "Hide API key entry",
     importZuliprc: "Import zuliprc files from Downloads",
-    waitingBrowser: "Complete the sign-in in your browser…", cancel: "Cancel"
+    waitingBrowser: "Complete the sign-in in your browser…", cancel: "Cancel",
+    createLaunchers: "An Omarchy launcher per account (Super+Space)"
   }
 }
 

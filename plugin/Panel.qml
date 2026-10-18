@@ -205,7 +205,7 @@ Panel {
       appendTarget(rows, notifyEnabled); appendTarget(rows, notifyPrivate); appendTarget(rows, notifyMentions)
       appendTarget(rows, notifyFollowed); appendTarget(rows, notifyOther); appendTarget(rows, notifyLocked)
       appendTarget(rows, groupWindowField); appendTarget(rows, mutedChannelsField); appendTarget(rows, alwaysChannelsField)
-      appendTarget(rows, openModeField); appendTarget(rows, desktopCommandField); appendTarget(rows, workspaceCommandField)
+      appendTarget(rows, openModeField); appendTarget(rows, launchersToggle); appendTarget(rows, desktopCommandField); appendTarget(rows, workspaceCommandField)
       appendTarget(rows, saveSettingsButton)
       appendChildren(rows, accountList); appendTarget(rows, addAccountButton)
       appendTarget(rows, diagnosticsButton); appendTarget(rows, serviceButton)
@@ -1235,6 +1235,16 @@ Panel {
               function keyboardActivate() { forceActiveFocus(); popup.open() }
               onHoveredChanged: if (hovered) root.selectTarget(this)
             }
+            Toggle {
+              id: launchersToggle
+              width: parent.width
+              label: root.t("createLaunchers")
+              checked: onboarding.settings.launchers !== false
+              hasCursor: root.hasCursor(this)
+              function keyboardActivate() { clicked() }
+              onClicked: checked = !checked
+              onHovered: function(value) { if (value) root.selectTarget(this) }
+            }
             TextField {
               id: desktopCommandField
               width: parent.width
@@ -1268,6 +1278,7 @@ Panel {
                 muted_channels: root.splitChannels(mutedChannelsField.text),
                 always_channels: root.splitChannels(alwaysChannelsField.text),
                 open_mode: openModeField.currentText,
+                launchers: launchersToggle.checked,
                 desktop_command: desktopCommandField.text,
                 workspace_launch_command: workspaceCommandField.text
               })
