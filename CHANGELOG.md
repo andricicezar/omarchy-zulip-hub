@@ -1,5 +1,14 @@
 # Historique des versions
 
+## 2.10.0 — 2026-10-18
+
+- **Bouton ✦ « Travailler sur Zulip Hub avec un agent ».** Ouvre un terminal
+  Omarchy dans le dossier du plugin (ou `development.directory`) et y lance
+  un agent de code (`development.agent_command`, `claude` par défaut), dans un
+  shell de connexion pour retrouver le PATH de l'utilisateur. Désactivé par
+  défaut (`[development] enabled`). `CLAUDE.md` décrit l'architecture, les
+  règles et les vérifications pour l'agent.
+
 ## 2.9.0 — 2026-10-18
 
 - **Ouvrir l'application d'un compte.** Sur une ligne de compte, `O`, un

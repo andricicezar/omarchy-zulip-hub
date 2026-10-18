@@ -18,6 +18,7 @@ from .marketplace import IntegrationError, run_action
 from .hyprland import HyprlandController, HyprlandError, resolve_launch_command
 from .notifications import NotificationCoordinator
 from .browser_login import LoginManager
+from .development import AgentError, start_agent
 from .onboarding import OnboardingManager, serve_once
 from .opening import AccountOpener, OpenError, UrlOpener
 from .reader import serve_once as serve_reader_once
@@ -45,6 +46,7 @@ def parser() -> argparse.ArgumentParser:
     mark_read = sub.add_parser("mark-read", help="marquer un message comme lu")
     mark_read.add_argument("message_id", type=int)
     mark_read.add_argument("--site", help="serveur du message (par défaut : le premier compte)")
+    sub.add_parser("start-agent", help="ouvrir un agent de code sur le plugin")
     sub.add_parser("workspace-toggle", help="afficher, masquer ou lancer le workspace Zulip")
     sub.add_parser("workspace-status", help="diagnostiquer la détection de la fenêtre Zulip")
     sub.add_parser("onboarding", help=argparse.SUPPRESS)
@@ -109,6 +111,9 @@ def main(argv: list[str] | None = None) -> int:
             account = config.account_for(row.get("site") or args.site)
             UrlOpener(config.opening).open(summary_url(account.site, row))
             return 0
+        if args.command == "start-agent":
+            print(start_agent(config.development))
+            return 0
         if args.command == "open-account":
             account = config.account_for(args.site)
             controller = HyprlandController(config.workspace, resolve_launch_command(config))
@@ -144,7 +149,7 @@ def main(argv: list[str] | None = None) -> int:
         return run_bridge(config, secrets, state_path)
     except (
         ConfigError, SecretError, OpenError, LinkError, HyprlandError, IntegrationError,
-        FileNotFoundError
+        AgentError, FileNotFoundError
     ) as exc:
         print(f"erreur: {exc}", file=sys.stderr)
         return 2

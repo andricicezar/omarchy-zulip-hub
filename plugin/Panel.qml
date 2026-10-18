@@ -347,6 +347,15 @@ Panel {
     close()
   }
 
+  // Un terminal avec un agent de code, dans le dossier du plugin.
+  function startAgent() {
+    if (agentProcess.running) return
+    actionError = ""
+    agentProcess.command = ["/usr/bin/python3", root.runnerPath, "start-agent"]
+    agentProcess.running = true
+    close()
+  }
+
   function markMessageRead(row) {
     if (!row || readProcess.running) return
     actionError = ""
@@ -619,6 +628,18 @@ Panel {
               }
             }
             Item { Layout.fillWidth: true }
+            PanelActionButton {
+              id: agentButton
+              visible: onboarding.settings.development_enabled === true
+              iconText: "✦"
+              tooltipText: root.t("startAgent")
+              foreground: root.foreground
+              hoverColor: root.foreground
+              fontFamily: root.fontFamily
+              enabled: !agentProcess.running
+              Layout.alignment: Qt.AlignVCenter
+              onClicked: root.startAgent()
+            }
             Text {
               text: onboarding.active ? root.t("active") : String(onboarding.service).toUpperCase()
               color: onboarding.active ? root.foreground : root.dim
@@ -1654,6 +1675,14 @@ Panel {
 
   Process {
     id: openProcess
+    stderr: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: if (text.trim() !== "") root.actionError = text.trim()
+    }
+  }
+
+  Process {
+    id: agentProcess
     stderr: StdioCollector {
       waitForEnd: true
       onStreamFinished: if (text.trim() !== "") root.actionError = text.trim()

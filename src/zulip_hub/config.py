@@ -100,6 +100,15 @@ class WorkspaceConfig:
 
 
 @dataclass(frozen=True)
+class DevelopmentConfig:
+    """Bouton du panneau qui ouvre un agent de code sur le plugin lui-même."""
+    enabled: bool = False
+    # Vide : le dossier du plugin installé.
+    directory: str = ""
+    agent_command: tuple[str, ...] = ("claude",)
+
+
+@dataclass(frozen=True)
 class BridgeConfig:
     accounts: tuple[AccountConfig, ...]
     notifications: NotificationConfig = NotificationConfig()
@@ -109,6 +118,7 @@ class BridgeConfig:
     request_timeout_seconds: int = 90
     initial_backoff_seconds: float = 1.0
     max_backoff_seconds: float = 60.0
+    development: DevelopmentConfig = DevelopmentConfig()
 
     def __post_init__(self) -> None:
         if isinstance(self.accounts, AccountConfig):
@@ -267,6 +277,22 @@ def load_config(path: Path) -> BridgeConfig:
     ):
         raise ConfigError("workspace.launch_command doit être une liste de chaînes non vides")
 
+    development = raw.get("development", {})
+    if not isinstance(development, dict):
+        raise ConfigError("[development] doit être une table")
+    dev_enabled = development.get("enabled", False)
+    dev_directory = development.get("directory", "")
+    agent_command = development.get("agent_command", ["claude"])
+    if not isinstance(dev_enabled, bool):
+        raise ConfigError("development.enabled doit être un booléen")
+    if not isinstance(dev_directory, str) or len(dev_directory) > 500:
+        raise ConfigError("development.directory doit être un chemin")
+    if (
+        not isinstance(agent_command, list) or not agent_command or len(agent_command) > 20
+        or not all(isinstance(item, str) and item and len(item) <= 300 for item in agent_command)
+    ):
+        raise ConfigError("development.agent_command doit être une liste de chaînes non vides")
+
     return BridgeConfig(
         accounts,
         notification_config,
@@ -276,4 +302,5 @@ def load_config(path: Path) -> BridgeConfig:
         timeout,
         initial,
         maximum,
+        DevelopmentConfig(dev_enabled, dev_directory.strip(), tuple(agent_command)),
     )

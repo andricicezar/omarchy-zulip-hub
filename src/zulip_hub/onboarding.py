@@ -61,6 +61,7 @@ class OnboardingManager:
             "open_mode": config.opening.mode,
             "desktop_command": list(config.opening.desktop_command),
             "launchers": config.opening.launchers,
+            "development_enabled": config.development.enabled,
             "workspace_launch_command": list(config.workspace.launch_command),
             "desktop_command_text": shlex.join(config.opening.desktop_command),
             "workspace_launch_command_text": shlex.join(config.workspace.launch_command),

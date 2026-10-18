@@ -87,6 +87,14 @@ The optional **Omarchy integration** control in Settings adds:
 The control changes only the user-owned Hyprland configuration under
 `~/.config/hypr/` after explicit activation.
 
+## Working on the plugin
+
+Set `enabled = true` under `[development]` in `~/.config/zulip-hub/config.toml`
+to show a ✦ button in the panel. It opens an Omarchy terminal in the plugin's
+folder (or `directory`, e.g. your own checkout) running `agent_command`
+(`claude` by default). `CLAUDE.md` gives the agent the architecture, rules,
+and checks.
+
 ## Update
 
 ```sh

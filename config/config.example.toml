@@ -35,5 +35,12 @@ class_pattern = "^(Zulip|zulip|zulip-hub|org\\.zulip\\.Zulip)$"
 # Leave empty to use open.desktop_command, then an Omarchy webapp fallback.
 launch_command = []
 
+[development]
+# Show a button in the panel that opens a coding agent on this plugin.
+enabled = false
+# Checkout to work in; empty means the installed plugin's own folder.
+directory = ""
+agent_command = ["claude"]
+
 [meta]
 schema_version = 1
