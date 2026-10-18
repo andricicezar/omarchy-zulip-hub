@@ -1,5 +1,13 @@
 # Historique des versions
 
+## 2.7.1 — 2026-10-18
+
+- **La connexion par navigateur aboutit.** Chromium confie `zulip://` au
+  portail « Ouvrir avec », qui consulte `mimeinfo.cache` : le gestionnaire
+  enregistré par `xdg-mime` seul n'y figurait pas, et le portail répondait
+  « aucune application ». La base des applications est désormais mise à jour
+  à l'enregistrement et au retrait du gestionnaire.
+
 ## 2.7.0 — 2026-10-18
 
 - **Un lanceur Omarchy par compte.** Une connexion réussie ajoute « <compte>

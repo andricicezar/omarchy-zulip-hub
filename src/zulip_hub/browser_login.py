@@ -125,7 +125,19 @@ class SchemeHandler:
             raise LoginError("Impossible d’enregistrer le gestionnaire zulip://.") from exc
         if result.returncode != 0:
             raise LoginError("Impossible d’enregistrer le gestionnaire zulip://.")
+        self._refresh_database()
         return previous
+
+    def _refresh_database(self) -> None:
+        """Le portail « Ouvrir avec » de Chromium lit mimeinfo.cache, pas
+        seulement mimeapps.list : sans cette mise à jour, il ne voit aucune
+        application pour zulip:// et la connexion s’arrête là."""
+        if not commands.available("update-desktop-database"):
+            return
+        try:
+            commands.run(["update-desktop-database", str(self.applications)], timeout=20)
+        except CommandError:
+            pass
 
     def restore(self, previous: str) -> None:
         if previous and previous != HANDLER_DESKTOP:
@@ -136,6 +148,7 @@ class SchemeHandler:
         else:
             self._forget_association()
         self.desktop_path.unlink(missing_ok=True)
+        self._refresh_database()
 
     def _forget_association(self) -> None:
         # Un mimeapps.list lien symbolique appartient à l’utilisateur (dotfiles) :

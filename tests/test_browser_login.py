@@ -249,6 +249,9 @@ class SchemeHandlerTests(unittest.TestCase):
         patcher = patch("zulip_hub.browser_login.commands.run", side_effect=run)
         patcher.start()
         self.addCleanup(patcher.stop)
+        available = patch("zulip_hub.browser_login.commands.available", return_value=True)
+        available.start()
+        self.addCleanup(available.stop)
 
     def tearDown(self):
         self.temporary.cleanup()
@@ -260,14 +263,17 @@ class SchemeHandlerTests(unittest.TestCase):
         self.assertIn('Exec=/usr/bin/python3 "/home/u/plug in/run-plugin.py" finish-login %u', entry)
         self.assertIn("NoDisplay=true", entry)
         self.assertIn(["xdg-mime", "default", HANDLER_DESKTOP, "x-scheme-handler/zulip"], self.calls)
+        # Sans cache à jour, le portail du navigateur ne trouve pas le gestionnaire.
+        self.assertEqual(self.calls[-1], ["update-desktop-database", str(self.handler.applications)])
 
     def test_restore_previous_handler(self):
         self.current = "org.zulip.Zulip.desktop"
         previous = self.handler.register()
         self.handler.restore(previous)
         self.assertFalse(self.handler.desktop_path.exists())
-        self.assertEqual(self.calls[-1],
+        self.assertEqual(self.calls[-2],
                          ["xdg-mime", "default", "org.zulip.Zulip.desktop", "x-scheme-handler/zulip"])
+        self.assertEqual(self.calls[-1][0], "update-desktop-database")
 
     def test_restore_without_previous_forgets_association(self):
         self.handler.mimeapps.write_text(
