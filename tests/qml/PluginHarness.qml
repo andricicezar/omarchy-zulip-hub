@@ -222,6 +222,40 @@ ShellRoot {
         Qt.exit(1)
         return
       }
+      var multi = JSON.parse(JSON.stringify(plugin.hub.state))
+      multi.accounts = [
+        {site: "https://a.example.org", name: "A", connected: true, error: "",
+         unread: {total: 3, mentions: 1, private: 0}},
+        {site: "https://b.example.org", name: "B", connected: false, error: "hors ligne",
+         unread: {total: 0, mentions: 0, private: 0}}
+      ]
+      multi.recent = [
+        {id: 1, type: "stream", sender: "Alice", channel: "c", topic: "t", timestamp: 2,
+         flags: [], site: "https://a.example.org", account: "A", recipient_ids: []},
+        {id: 1, type: "private", sender: "Bob", timestamp: 1, flags: [],
+         site: "https://b.example.org", account: "B", recipient_ids: [2]}
+      ]
+      plugin.hub.state = multi
+      plugin.open()
+      var accountRows = plugin.focusTargets().filter(function(item) { return item.account !== undefined })
+      if (!plugin.hub.multiAccount || accountRows.length !== 2 || plugin.messageCount !== 2) {
+        console.error("ZULIP_HUB_ACCOUNT_SUMMARY_MISMATCH " + accountRows.length)
+        Qt.exit(1)
+        return
+      }
+      accountRows[1].keyboardActivate()
+      if (plugin.messageCount !== 1 || plugin.visibleRecent[0].sender !== "Bob"
+          || plugin.accountFilterName !== "B") {
+        console.error("ZULIP_HUB_ACCOUNT_FILTER_MISMATCH")
+        Qt.exit(1)
+        return
+      }
+      plugin.toggleAccountFilter("https://b.example.org")
+      if (plugin.messageCount !== 2) {
+        console.error("ZULIP_HUB_ACCOUNT_FILTER_NOT_CLEARED")
+        Qt.exit(1)
+        return
+      }
       console.log("ZULIP_HUB_PLUGIN_READY")
       Qt.exit(0)
     }

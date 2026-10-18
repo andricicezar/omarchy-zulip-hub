@@ -1,5 +1,14 @@
 # Historique des versions
 
+## 2.8.0 — 2026-10-18
+
+- **Le panneau montre chaque compte.** Avec plusieurs comptes, les trois
+  compteurs globaux laissent place à la liste des comptes connectés : état de
+  connexion (ou erreur), non lus, mentions et messages directs de chacun. Un
+  clic sur un compte filtre les conversations récentes sur ce serveur ; un
+  second clic les affiche toutes. L'en-tête annonce le nombre de comptes, et
+  l'infobulle de la barre résume les non lus par compte.
+
 ## 2.7.1 — 2026-10-18
 
 - **La connexion par navigateur aboutit.** Chromium confie `zulip://` au

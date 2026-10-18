@@ -89,7 +89,28 @@ Panel {
   readonly property bool showMentions: setting("showMentions", true) === true
   readonly property bool hideWhenEmpty: setting("hideWhenEmpty", false) === true
   readonly property bool hasMentions: hub.unread.mentions > 0
-  readonly property int messageCount: hub.recent.length
+  readonly property int messageCount: root.visibleRecent.length
+  // Serveur dont seules les conversations sont affichées ; vide pour tous.
+  property string accountFilter: ""
+  readonly property var visibleRecent: root.accountFilter === "" ? hub.recent
+    : hub.recent.filter(function(row) { return row.site === root.accountFilter })
+  readonly property string accountFilterName: {
+    for (var index = 0; index < hub.accounts.length; index++)
+      if (hub.accounts[index].site === root.accountFilter) return hub.accounts[index].name
+    return ""
+  }
+
+  function toggleAccountFilter(site) {
+    root.accountFilter = root.accountFilter === site ? "" : String(site)
+    ensureCursor()
+  }
+
+  // Résumé par compte pour l’infobulle de la barre : « FStar 3 · MPI-SP 0 ».
+  function accountsTooltip() {
+    return hub.accounts.map(function(account) {
+      return account.name + " " + (account.connected ? String(account.unread.total) : root.t("offline"))
+    }).join("  ·  ")
+  }
   readonly property var hub: hubLoader.item || fallbackHub
   property var fallbackHub: ({
     state: Model.emptyState(""),
@@ -215,6 +236,7 @@ Panel {
     } else {
       appendTarget(rows, composeNavButton); appendTarget(rows, settingsNavButton)
       if (updates.restartNeeded) appendTarget(rows, restartShellButton)
+      appendChildren(rows, accountColumn)
       appendChildren(rows, messageColumn)
     }
     return rows
@@ -447,7 +469,7 @@ Panel {
     active: root.showMentions && root.hasMentions
     dimmed: !hub.connected
     fontSize: Style.font.body
-    tooltipText: "Zulip — " + root.localizedStatus
+    tooltipText: "Zulip — " + (hub.multiAccount && hub.connected ? root.accountsTooltip() : root.localizedStatus)
     onPressed: function(buttonCode) {
       if (buttonCode === Qt.RightButton) hub.refresh()
       else root.toggle()
@@ -515,7 +537,11 @@ Panel {
             meta: root.showSetup ? root.t("configuration") : root.localizedStatus
             detail: root.showSetup
               ? root.t("secureConnection")
-              : (hub.connected ? String(hub.unread.total) + " " + root.t("unread") : root.t("offline"))
+              : (hub.connected
+                ? (hub.multiAccount
+                  ? root.t("accountsCount").replace("%1", String(hub.accounts.length)) + "  ·  " : "")
+                  + String(hub.unread.total) + " " + root.t("unread")
+                : root.t("offline"))
             foreground: root.foreground
             fontFamily: root.fontFamily
             iconOpacity: hub.connected ? 1.0 : 0.45
@@ -1436,8 +1462,34 @@ Panel {
             }
           }
 
+          Column {
+            visible: hub.loaded && root.showHome && hub.multiAccount
+            width: parent.width
+            spacing: Style.space(6)
+
+            PanelSectionHeader {
+              text: root.t("connectedAccounts").replace("%1", String(hub.accounts.length))
+              foreground: root.foreground
+              fontFamily: root.fontFamily
+            }
+
+            Column {
+              id: accountColumn
+              width: parent.width
+              spacing: Style.space(4)
+              Repeater {
+                model: hub.accounts
+                AccountRow {
+                  required property var modelData
+                  width: accountColumn.width
+                  account: modelData
+                }
+              }
+            }
+          }
+
           RowLayout {
-            visible: hub.loaded && root.showHome
+            visible: hub.loaded && root.showHome && !hub.multiAccount
             width: parent.width
             spacing: Style.space(8)
 
@@ -1523,12 +1575,13 @@ Panel {
 
             PanelSectionHeader {
               text: root.t("recentUnread")
+                + (root.accountFilterName !== "" ? "  —  " + root.accountFilterName.toUpperCase() : "")
               foreground: root.foreground
               fontFamily: root.fontFamily
             }
 
             Text {
-              visible: hub.recent.length === 0
+              visible: root.visibleRecent.length === 0
               width: parent.width
               text: root.t("noRecent")
               textFormat: Text.PlainText
@@ -1540,12 +1593,12 @@ Panel {
 
             Column {
               id: messageColumn
-              visible: hub.recent.length > 0
+              visible: root.visibleRecent.length > 0
               width: parent.width
               spacing: Style.space(6)
 
               Repeater {
-                model: hub.recent
+                model: root.visibleRecent
                 MessageRow {
                   required property var modelData
                   required property int index
@@ -1681,6 +1734,97 @@ Panel {
         font.family: root.fontFamily
         font.pixelSize: Style.font.caption
         font.bold: true
+      }
+    }
+  }
+
+  component AccountRow: CursorSurface {
+    id: accountRow
+    required property var account
+    readonly property bool failing: account.connected !== true
+
+    hasCursor: root.hasCursor(accountRow)
+    current: root.accountFilter === account.site
+    foreground: root.foreground
+    implicitHeight: accountLayout.implicitHeight + Style.space(12)
+    function keyboardActivate() { root.toggleAccountFilter(account.site) }
+
+    MouseArea {
+      anchors.fill: parent
+      hoverEnabled: true
+      cursorShape: Qt.PointingHandCursor
+      onEntered: root.selectTarget(accountRow)
+      onClicked: root.toggleAccountFilter(accountRow.account.site)
+    }
+
+    RowLayout {
+      id: accountLayout
+      anchors.left: parent.left
+      anchors.right: parent.right
+      anchors.verticalCenter: parent.verticalCenter
+      anchors.leftMargin: Style.space(10)
+      anchors.rightMargin: Style.space(10)
+      spacing: Style.space(10)
+
+      Rectangle {
+        Layout.preferredWidth: Style.space(8)
+        Layout.preferredHeight: Style.space(8)
+        Layout.alignment: Qt.AlignVCenter
+        radius: width / 2
+        color: accountRow.failing ? "transparent" : root.foreground
+        border.width: 1
+        border.color: accountRow.failing ? root.urgent : root.foreground
+      }
+
+      ColumnLayout {
+        Layout.fillWidth: true
+        spacing: Style.space(1)
+        Text {
+          Layout.fillWidth: true
+          text: accountRow.account.name
+          textFormat: Text.PlainText
+          color: root.foreground
+          font.family: root.fontFamily
+          font.pixelSize: Style.font.body
+          font.bold: true
+          elide: Text.ElideRight
+        }
+        Text {
+          visible: accountRow.failing
+          Layout.fillWidth: true
+          text: accountRow.account.error !== "" ? accountRow.account.error : root.t("offline")
+          textFormat: Text.PlainText
+          color: root.urgent
+          font.family: root.fontFamily
+          font.pixelSize: Style.font.caption
+          elide: Text.ElideRight
+        }
+      }
+
+      Text {
+        visible: !accountRow.failing && accountRow.account.unread.mentions > 0
+        text: "@ " + String(accountRow.account.unread.mentions)
+        color: root.urgent
+        font.family: root.fontFamily
+        font.pixelSize: Style.font.bodySmall
+        font.bold: true
+      }
+      Text {
+        visible: !accountRow.failing && accountRow.account.unread.private > 0
+        text: "✉ " + String(accountRow.account.unread.private)
+        color: root.foreground
+        font.family: root.fontFamily
+        font.pixelSize: Style.font.bodySmall
+      }
+      Text {
+        visible: !accountRow.failing
+        text: String(accountRow.account.unread.total)
+        Layout.minimumWidth: Style.space(22)
+        horizontalAlignment: Text.AlignRight
+        color: accountRow.account.unread.total > 0 ? root.foreground : root.dim
+        font.family: root.fontFamily
+        font.pixelSize: Style.font.heading
+        font.bold: accountRow.account.unread.total > 0
       }
     }
   }

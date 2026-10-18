@@ -49,7 +49,8 @@ var strings = {
     useApiKey: "Utiliser une clé API", hideApiKey: "Masquer la saisie de clé API",
     importZuliprc: "Importer les zuliprc du dossier Téléchargements",
     waitingBrowser: "Terminez la connexion dans le navigateur…", cancel: "Annuler",
-    createLaunchers: "Un lanceur Omarchy par compte (Super+Espace)"
+    createLaunchers: "Un lanceur Omarchy par compte (Super+Espace)",
+    connectedAccounts: "%1 COMPTES ZULIP", accountsCount: "%1 comptes"
   },
   en: {
     connected: "Connected", offline: "Offline", waiting: "Waiting for bridge",
@@ -99,7 +100,8 @@ var strings = {
     useApiKey: "Use an API key instead", hideApiKey: "Hide API key entry",
     importZuliprc: "Import zuliprc files from Downloads",
     waitingBrowser: "Complete the sign-in in your browser…", cancel: "Cancel",
-    createLaunchers: "An Omarchy launcher per account (Super+Space)"
+    createLaunchers: "An Omarchy launcher per account (Super+Space)",
+    connectedAccounts: "%1 ZULIP ACCOUNTS", accountsCount: "%1 accounts"
   }
 }
 
